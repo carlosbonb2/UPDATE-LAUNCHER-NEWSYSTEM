@@ -1,0 +1,70 @@
+name: Build e Release do LauncherUpdater
+
+on:
+  push:
+    tags:
+      - 'v*' # Só executa quando você criar uma tag (ex: v1.0.0)
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    permissions:
+      contents: write # Permissão para criar a release
+
+    steps:
+      - name: 1. Código
+        uses: actions/checkout@v4
+
+      - name: 2. Configuração do .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      
+      # Assumindo que o projeto está em "LauncherUpdater/LauncherUpdater.csproj"
+      # Ajuste o caminho se necessário
+      
+      - name: 3. 🛡️ Guardião 1 Verificar Formatação
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+      - name: 4. Restaurar dependências
+        run: dotnet restore "LauncherUpdater/LauncherUpdater.csproj" -r win-x64
+        
+      - name: 5. 🛡️ Guardião 2 Verificar Pacotes Vulneráveis
+        run: dotnet list "LauncherUpdater/LauncherUpdater.csproj" package --vulnerable --include-transitive
+
+      - name: 6. 🛡️ Guardião 3 Construir e Publicar (Release + Auto-Suficiente)
+        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:TreatWarningsAsErrors=true
+
+      # --- Bloco de Assinatura (Altamente Recomendado) ---
+      - name: 7. Decodificar Certificado
+        run: |
+          $pfx_base_64_with_headers = "${{ secrets.CODE_SIGNING_CERTIFICATE }}"
+          $pfx_path = "signing_cert.pfx"
+          $pfx_base_64_raw = $pfx_base_64_with_headers -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "\r", "" -replace "\n", ""
+          [System.IO.File]::WriteAllBytes($pfx_path, [System.Convert]::FromBase64String($pfx_base_64_raw))
+        shell: pwsh
+        # CRIE OS SECRETS NESTE REPOSITÓRIO TAMBÉM
+
+      - name: 8. Adicionar MSBuild e Signtool ao PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: 9. Assinar executável
+        run: |
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "signing_cert.pfx" /p "${{ secrets.CODE_SIGNING_PASSWORD }}" /fd SHA256 /tr http://timestamp.digert.com /td SHA256 "publish\LauncherUpdater.exe"
+        shell: pwsh
+        continue-on-error: true 
+      # --- Fim do Bloco de Assinatura ---
+        
+      - name: 10. Gerar Hash de Verificação
+        run: |
+          Get-FileHash -Path ./publish/LauncherUpdater.exe -Algorithm SHA256 | Out-File -FilePath ./publish/LauncherUpdater_hash.txt
+        shell: pwsh
+
+      - name: 11. Criar Release e Anexar Artefatos
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: LauncherUpdater ${{ github.ref_name }}
+          files: |
+            ./publish/LauncherUpdater.exe
+            ./publish/LauncherUpdater_hash.txt
