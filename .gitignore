@@ -1,0 +1,6 @@
+# Ignorar arquivos do Visual Studio
+/.vs/
+
+# Ignorar pastas de compilação
+[Bb]in/
+[Oo]bj/

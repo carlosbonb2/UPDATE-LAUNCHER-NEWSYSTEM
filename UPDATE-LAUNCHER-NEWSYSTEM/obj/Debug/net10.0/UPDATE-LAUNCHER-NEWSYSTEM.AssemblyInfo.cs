@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("UPDATE-LAUNCHER-NEWSYSTEM")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e52e5fcaa9be8f7a45ea5c9e3374644d459c9618")]
 [assembly: System.Reflection.AssemblyProductAttribute("UPDATE-LAUNCHER-NEWSYSTEM")]
 [assembly: System.Reflection.AssemblyTitleAttribute("UPDATE-LAUNCHER-NEWSYSTEM")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
