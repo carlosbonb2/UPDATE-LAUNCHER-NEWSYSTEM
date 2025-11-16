@@ -3,13 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>UPDATE_LAUNCHER_NEWSYSTEM</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.IO.Compression" Version="4.3.0" />
-  </ItemGroup>
 
 </Project>
