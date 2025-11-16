@@ -53,7 +53,6 @@ namespace LauncherUpdater
                 }
                 catch (ArgumentException)
                 {
-                    // Processo já fechou, ótimo.
                 }
 
                 // Pausa de segurança (como no .bat)
