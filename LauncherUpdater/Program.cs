@@ -1,124 +1,91 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
+using System.Linq;
 using System.Threading;
-
-/*
- * =================================================================================
- * LAUNCHER UPDATER
- * =================================================================================
- * Este executável é chamado pelo Launcher principal (PDV_Laucher.exe).
- * Seu único trabalho é:
- * 1. Esperar o Launcher principal fechar.
- * 2. Mover o .exe principal para .exe.old.
- * 3. Extrair o novo .zip por cima.
- * 4. Em caso de falha, reverter (mover .old de volta para .exe).
- * 5. Iniciar o novo .exe.
- * =================================================================================
- */
 
 namespace LauncherUpdater
 {
     internal class Program
     {
-        static int Main(string[] args)
+        static void Main(string[] args)
         {
-            // Argumentos esperados:
-            // 0: --pid [ID_DO_PROCESSO_PAI]
-            // 1: --zip-path [CAMINHO_DO_ZIP_BAIXADO]
-            // 2: --target-dir [PASTA_DO_LAUNCHER_INSTALADO]
-            // 3: --exe-name [NOME_DO_EXE_PRINCIPAL]
-
             try
             {
-                // 1. Parse dos argumentos
+                // ---------------------------------------------------------------
+                // LAUNCHER UPDATER - O Operário que faz a troca dos arquivos
+                // ---------------------------------------------------------------
+
+                if (args.Length < 4) return;
+
+                // Parse simplificado dos argumentos
                 var argsDict = args.Select(s => s.Split(new[] { '=' }, 2))
+                                   .Where(p => p.Length == 2)
                                    .ToDictionary(a => a[0], a => a[1]);
 
-                int parentPid = int.Parse(argsDict["--pid"]);
-                string zipPath = argsDict["--zip-path"];
-                string targetDir = argsDict["--target-dir"];
-                string exeName = argsDict["--exe-name"];
+                int parentPid = int.Parse(argsDict["--parent-pid"]);
+                string sourceDir = argsDict["--source-dir"]; // Pasta Temp (Origem)
+                string targetDir = argsDict["--target-dir"]; // Pasta Instalação (Destino)
+                string exeName = argsDict["--exe-name"];     // Nome do executável principal (PDV_Launcher.exe)
 
-                string targetExePath = Path.Combine(targetDir, exeName);
-                string oldExePath = targetExePath + ".old";
-
-                // 2. Esperar o processo pai (Launcher) fechar
+                // 1. Espera o Launcher principal (Pai) morrer
                 try
                 {
-                    Process parentProcess = Process.GetProcessById(parentPid);
-                    Console.WriteLine($"Aguardando o processo principal (PID: {parentPid}) fechar...");
-                    parentProcess.WaitForExit(10000); // Espera até 10 segundos
+                    Process parent = Process.GetProcessById(parentPid);
+                    parent.WaitForExit(10000); // Espera até 10s
                 }
-                catch (ArgumentException)
+                catch { /* Já morreu, segue o jogo */ }
+
+                Thread.Sleep(1000); // Respiro para o SO liberar o arquivo
+
+                // 2. Copia TUDO da pasta Temp para a Pasta Real (Sobrescrevendo)
+                CopyDirectory(sourceDir, targetDir);
+
+                // 3. Reinicia o Launcher novo
+                string newExePath = Path.Combine(targetDir, exeName);
+
+                // Se o nome do executável na pasta de destino estiver errado (ex: versão antiga com typo),
+                // o updater tenta iniciar o nome correto "PDV_Launcher.exe" se ele foi copiado agora.
+                if (!File.Exists(newExePath) && exeName.Contains("Laucher"))
                 {
+                    // Tentativa de autocorreção de nome se a versão antiga tinha typo
+                    string fixedName = exeName.Replace("Laucher", "Launcher");
+                    string fixedPath = Path.Combine(targetDir, fixedName);
+                    if (File.Exists(fixedPath)) newExePath = fixedPath;
                 }
 
-                // Pausa de segurança (como no .bat)
-                Thread.Sleep(3000);
-
-                // 3. Tentar a atualização (Lógica "8 ou 80")
-                try
+                if (File.Exists(newExePath))
                 {
-                    // 3.1 Mover o .exe atual para .old
-                    if (File.Exists(targetExePath))
+                    ProcessStartInfo startInfo = new ProcessStartInfo(newExePath)
                     {
-                        Console.WriteLine($"Renomeando {exeName} para {exeName}.old");
-                        File.Move(targetExePath, oldExePath, true);
-                    }
-
-                    // 3.2 Extrair o novo .zip
-                    Console.WriteLine($"Extraindo {zipPath} para {targetDir}...");
-                    ZipFile.ExtractToDirectory(zipPath, targetDir, true);
-
-                    // 3.3 Limpar o .old (Sucesso!)
-                    if (File.Exists(oldExePath))
-                    {
-                        File.Delete(oldExePath);
-                    }
-                    Console.WriteLine("Atualização concluída com sucesso!");
+                        WorkingDirectory = targetDir,
+                        UseShellExecute = true
+                    };
+                    Process.Start(startInfo);
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"ERRO CRÍTICO NA ATUALIZAÇÃO: {ex.Message}");
-                    // 4. ROLLBACK! Se algo deu errado, reverte.
-                    if (File.Exists(oldExePath) && !File.Exists(targetExePath))
-                    {
-                        Console.WriteLine("Tentando reverter para a versão anterior...");
-                        File.Move(oldExePath, targetExePath, true);
-                        Console.WriteLine("Reversão concluída.");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Não foi possível reverter automaticamente.");
-                    }
-                }
-                finally
-                {
-                    // 5. Tentar reiniciar o Launcher (seja a versão nova ou a antiga revertida)
-                    if (File.Exists(targetExePath))
-                    {
-                        Console.WriteLine("Reiniciando o Launcher...");
-                        Process.Start(new ProcessStartInfo(targetExePath)
-                        {
-                            UseShellExecute = true // Necessário para .exe
-                        });
-                    }
-                    else
-                    {
-                        Console.WriteLine($"ERRO FATAL: {targetExePath} não encontrado. Não foi possível reiniciar.");
-                    }
-                }
-
-                return 0; // Sucesso
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"ERRO INESPERADO NO ATUALIZADOR: {ex.Message}");
-                Console.WriteLine("Pressione Enter para sair...");
-                Console.ReadLine();
-                return 1; // Falha
+                // Se der pau aqui, não tem UI. Grava um txt na pasta temp ou desktop.
+                string logFile = Path.Combine(Path.GetTempPath(), "pdv_updater_error.log");
+                File.WriteAllText(logFile, ex.ToString());
+            }
+        }
+
+        private static void CopyDirectory(string sourceDir, string targetDir)
+        {
+            Directory.CreateDirectory(targetDir);
+
+            foreach (var file in Directory.GetFiles(sourceDir))
+            {
+                string destFile = Path.Combine(targetDir, Path.GetFileName(file));
+                File.Copy(file, destFile, true);
+            }
+
+            foreach (var subDir in Directory.GetDirectories(sourceDir))
+            {
+                string destSubDir = Path.Combine(targetDir, new DirectoryInfo(subDir).Name);
+                CopyDirectory(subDir, destSubDir);
             }
         }
     }
