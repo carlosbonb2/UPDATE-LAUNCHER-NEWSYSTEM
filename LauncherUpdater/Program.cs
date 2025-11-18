@@ -8,90 +8,135 @@ namespace LauncherUpdater
 {
     internal class Program
     {
-        // Definição dos nomes para a transição
-        const string NOME_ANTIGO_ERRADO = "PDV_Laucher.exe";
-        const string NOME_NOVO_CORRETO = "PDV_Launcher.exe";
+        // CONSTANTES
+        const string NOME_ATALHO = "PDV NewSystem";
 
         static void Main(string[] args)
         {
             try
             {
+                // MODO 1: Correção de Nome (Migração v1 -> v2)
+                // args: --fix-mode --pid=1234 --dir="C:\Path" --old="PDV_Laucher.exe" --new="PDV_Launcher.exe"
+                if (args.Contains("--fix-mode"))
+                {
+                    ExecutarCorrecaoNome(args);
+                    return;
+                }
+
+                // MODO 2: Atualização Padrão (Cópia de arquivos)
                 if (args.Length < 4) return;
+                ExecutarAtualizacaoPadrao(args);
+            }
+            catch (Exception ex)
+            {
+                string log = Path.Combine(Path.GetTempPath(), "updater_error.log");
+                File.WriteAllText(log, $"{DateTime.Now}: {ex}");
+            }
+        }
 
-                var argsDict = args.Select(s => s.Split(new[] { '=' }, 2))
-                                   .Where(p => p.Length == 2)
-                                   .ToDictionary(a => a[0], a => a[1]);
+        private static void ExecutarAtualizacaoPadrao(string[] args)
+        {
+            int parentPid = int.Parse(GetArg(args, "--parent-pid"));
+            string sourceDir = GetArg(args, "--source-dir");
+            string targetDir = GetArg(args, "--target-dir");
+            string exeNameSolicitado = GetArg(args, "--exe-name");
 
-                int parentPid = int.Parse(argsDict["--parent-pid"]);
-                string sourceDir = argsDict["--source-dir"];
-                string targetDir = argsDict["--target-dir"];
-                string exeNameSolicitado = argsDict["--exe-name"]; // O Launcher antigo vai mandar o nome errado aqui
-
-                // 1. Espera o Launcher morrer
-                try
+            // 1. Espera o Launcher morrer
+            try
+            {
+                if (parentPid > 0)
                 {
                     Process parent = Process.GetProcessById(parentPid);
                     parent.WaitForExit(10000);
                 }
-                catch { }
-
-                Thread.Sleep(1000);
-
-                // 2. Atualiza os arquivos (Copia o novo PDV_Launcher.exe para a pasta)
-                CopyDirectory(sourceDir, targetDir);
-
-                // 3. LIMPEZA DO LEGADO (A Mágica acontece aqui)
-                string caminhoAntigo = Path.Combine(targetDir, NOME_ANTIGO_ERRADO);
-                string caminhoNovo = Path.Combine(targetDir, NOME_NOVO_CORRETO);
-
-                // Se existir o arquivo velho, apagamos ele para não ficar lixo
-                if (File.Exists(caminhoAntigo) && File.Exists(caminhoNovo))
-                {
-                    try
-                    {
-                        Console.WriteLine("Removendo executável com nome antigo...");
-                        File.Delete(caminhoAntigo);
-                    }
-                    catch { }
-                }
-
-                // 4. Lógica de Correção de Inicialização
-                string exeParaIniciar = Path.Combine(targetDir, exeNameSolicitado);
-
-                // Se o Launcher antigo pediu para abrir o "Laucher" (sem N), mas ele não existe mais...
-                if (!File.Exists(exeParaIniciar) &&
-                    exeNameSolicitado.Equals(NOME_ANTIGO_ERRADO, StringComparison.OrdinalIgnoreCase))
-                {
-                    Console.WriteLine("Detectada migração de versão. Redirecionando para o novo executável...");
-                    // ...trocamos para o "Launcher" (com N)
-                    exeParaIniciar = caminhoNovo;
-                }
-
-                // 5. Iniciar o novo Launcher
-                if (File.Exists(exeParaIniciar))
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo(exeParaIniciar)
-                    {
-                        WorkingDirectory = targetDir,
-                        UseShellExecute = true
-                    };
-                    Process.Start(startInfo);
-                }
-                else
-                {
-                    // Fallback de emergência: Tenta achar qualquer .exe que pareça o launcher
-                    string[] candidatos = Directory.GetFiles(targetDir, "PDV_Lau*.exe");
-                    if (candidatos.Length > 0)
-                    {
-                        Process.Start(new ProcessStartInfo(candidatos[0]) { WorkingDirectory = targetDir, UseShellExecute = true });
-                    }
-                }
             }
-            catch (Exception ex)
+            catch { }
+
+            Thread.Sleep(1000);
+
+            // 2. Atualiza os arquivos
+            CopyDirectory(sourceDir, targetDir);
+
+            // 3. Iniciar o Launcher
+            string exeParaIniciar = Path.Combine(targetDir, exeNameSolicitado);
+            if (File.Exists(exeParaIniciar))
             {
-                string log = Path.Combine(Path.GetTempPath(), "pdv_update_error.txt");
-                File.WriteAllText(log, ex.ToString());
+                Process.Start(new ProcessStartInfo(exeParaIniciar) { WorkingDirectory = targetDir, UseShellExecute = true });
             }
+        }
+
+        private static void ExecutarCorrecaoNome(string[] args)
+        {
+            int pid = int.Parse(GetArg(args, "--pid"));
+            string dir = GetArg(args, "--dir");
+            string oldName = GetArg(args, "--old");
+            string newName = GetArg(args, "--new");
+
+            string pathOld = Path.Combine(dir, oldName);
+            string pathNew = Path.Combine(dir, newName);
+
+            // 1. Espera o Launcher (errado) fechar
+            try
+            {
+                if (pid > 0)
+                {
+                    Process p = Process.GetProcessById(pid);
+                    p.WaitForExit(5000);
+                }
+            }
+            catch { }
+
+            Thread.Sleep(1000);
+
+            // 2. Renomeia o arquivo (A Mágica)
+            if (File.Exists(pathOld))
+            {
+                if (File.Exists(pathNew)) try { File.Delete(pathNew); } catch { } // Limpa se já existir lixo
+                File.Move(pathOld, pathNew);
+            }
+
+            // 3. Corrige o Atalho (Importantíssimo)
+            CorrigirAtalho(NOME_ATALHO, pathNew, dir);
+
+            // 4. Inicia o Launcher com o nome certo
+            if (File.Exists(pathNew))
+            {
+                Process.Start(new ProcessStartInfo(pathNew) { WorkingDirectory = dir, UseShellExecute = true });
+            }
+        }
+
+        private static string GetArg(string[] args, string key)
+        {
+            foreach (var arg in args)
+            {
+                // Suporta --key=value e key=value
+                string cleanArg = arg.TrimStart('-');
+                string cleanKey = key.TrimStart('-');
+                if (cleanArg.StartsWith(cleanKey + "="))
+                    return cleanArg.Split(new[] { '=' }, 2)[1].Trim('"');
+            }
+            return "";
+        }
+
+        private static void CorrigirAtalho(string nome, string target, string workDir)
+        {
+            try
+            {
+                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                string link = Path.Combine(desktop, nome + ".lnk");
+                if (File.Exists(link)) File.Delete(link);
+
+                // Cria o novo via PowerShell (rápido e nativo)
+                string ps = $"-NoProfile -Command \"$s=(New-Object -Com WScript.Shell).CreateShortcut('{link}');$s.TargetPath='{target}';$s.WorkingDirectory='{workDir}';$s.Save()\"";
+
+                Process.Start(new ProcessStartInfo("powershell", ps)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                })?.WaitForExit();
+            }
+            catch { }
         }
 
         private static void CopyDirectory(string sourceDir, string targetDir)
@@ -100,7 +145,7 @@ namespace LauncherUpdater
             foreach (var file in Directory.GetFiles(sourceDir))
             {
                 string destFile = Path.Combine(targetDir, Path.GetFileName(file));
-                File.Copy(file, destFile, true);
+                try { File.Copy(file, destFile, true); } catch { Thread.Sleep(200); try { File.Copy(file, destFile, true); } catch { } }
             }
             foreach (var subDir in Directory.GetDirectories(sourceDir))
             {
