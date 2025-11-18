@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression; // Necessário para descompactar o ZIP
 using System.Linq;
 using System.Threading;
 
@@ -8,56 +9,80 @@ namespace LauncherUpdater
 {
     internal class Program
     {
-        // CONSTANTES
         const string NOME_ATALHO = "PDV NewSystem";
 
         static void Main(string[] args)
         {
             try
             {
-                // MODO 1: Correção de Nome (Migração v1 -> v2)
-                // args: --fix-mode --pid=1234 --dir="C:\Path" --old="PDV_Laucher.exe" --new="PDV_Launcher.exe"
+                // Se tiver o argumento de correção, vai para o modo de renomear
                 if (args.Contains("--fix-mode"))
                 {
                     ExecutarCorrecaoNome(args);
                     return;
                 }
 
-                // MODO 2: Atualização Padrão (Cópia de arquivos)
-                if (args.Length < 4) return;
-                ExecutarAtualizacaoPadrao(args);
+                // Se não, e tiver argumentos, é atualização padrão
+                if (args.Length > 0)
+                {
+                    ExecutarAtualizacaoPadrao(args);
+                }
             }
             catch (Exception ex)
             {
-                string log = Path.Combine(Path.GetTempPath(), "updater_error.log");
+                // Log de emergência caso o Updater morra
+                string log = Path.Combine(Path.GetTempPath(), "updater_crash.log");
                 File.WriteAllText(log, $"{DateTime.Now}: {ex}");
             }
         }
 
         private static void ExecutarAtualizacaoPadrao(string[] args)
         {
-            int parentPid = int.Parse(GetArg(args, "--parent-pid"));
-            string sourceDir = GetArg(args, "--source-dir");
-            string targetDir = GetArg(args, "--target-dir");
+            int parentPid = int.Parse(GetArg(args, "--pid"));
+            string zipPath = GetArg(args, "--zip-path"); // Caminho do arquivo .zip baixado
+            string targetDir = GetArg(args, "--target-dir"); // Pasta onde o PDV está instalado
             string exeNameSolicitado = GetArg(args, "--exe-name");
 
-            // 1. Espera o Launcher morrer
-            try
+            // 1. Espera o Launcher fechar (para soltar os arquivos)
+            if (parentPid > 0)
             {
-                if (parentPid > 0)
+                try
                 {
                     Process parent = Process.GetProcessById(parentPid);
-                    parent.WaitForExit(10000);
+                    parent.WaitForExit(10000); // Espera até 10s
+                }
+                catch { /* Processo já morreu */ }
+            }
+            Thread.Sleep(1000); // Respira fundo
+
+            // 2. Prepara extração
+            string tempExtractDir = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 8));
+
+            try
+            {
+                if (File.Exists(zipPath))
+                {
+                    // Cria pasta temporária e extrai o ZIP lá dentro
+                    Directory.CreateDirectory(tempExtractDir);
+                    ZipFile.ExtractToDirectory(zipPath, tempExtractDir, true);
+
+                    // 3. Copia os arquivos extraídos para a pasta de instalação (Sobrescrevendo)
+                    CopyDirectory(tempExtractDir, targetDir);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                File.WriteAllText(Path.Combine(Path.GetTempPath(), "updater_copy_error.txt"), ex.ToString());
+                throw;
+            }
+            finally
+            {
+                // Limpeza: Apaga a pasta temporária e o ZIP
+                try { if (Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { }
+                try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
+            }
 
-            Thread.Sleep(1000);
-
-            // 2. Atualiza os arquivos
-            CopyDirectory(sourceDir, targetDir);
-
-            // 3. Iniciar o Launcher
+            // 4. Reabre o Launcher atualizado
             string exeParaIniciar = Path.Combine(targetDir, exeNameSolicitado);
             if (File.Exists(exeParaIniciar))
             {
@@ -71,45 +96,33 @@ namespace LauncherUpdater
             string dir = GetArg(args, "--dir");
             string oldName = GetArg(args, "--old");
             string newName = GetArg(args, "--new");
-
             string pathOld = Path.Combine(dir, oldName);
             string pathNew = Path.Combine(dir, newName);
 
-            // 1. Espera o Launcher (errado) fechar
-            try
-            {
-                if (pid > 0)
-                {
-                    Process p = Process.GetProcessById(pid);
-                    p.WaitForExit(5000);
-                }
-            }
-            catch { }
-
+            try { if (pid > 0) Process.GetProcessById(pid).WaitForExit(5000); } catch { }
             Thread.Sleep(1000);
 
-            // 2. Renomeia o arquivo (A Mágica)
+            // Renomeia o executável
             if (File.Exists(pathOld))
             {
-                if (File.Exists(pathNew)) try { File.Delete(pathNew); } catch { } // Limpa se já existir lixo
+                if (File.Exists(pathNew)) try { File.Delete(pathNew); } catch { }
                 File.Move(pathOld, pathNew);
             }
 
-            // 3. Corrige o Atalho (Importantíssimo)
+            // Corrige o atalho na área de trabalho
             CorrigirAtalho(NOME_ATALHO, pathNew, dir);
 
-            // 4. Inicia o Launcher com o nome certo
+            // Abre o novo
             if (File.Exists(pathNew))
-            {
                 Process.Start(new ProcessStartInfo(pathNew) { WorkingDirectory = dir, UseShellExecute = true });
-            }
         }
+
+        // --- MÉTODOS AUXILIARES ---
 
         private static string GetArg(string[] args, string key)
         {
             foreach (var arg in args)
             {
-                // Suporta --key=value e key=value
                 string cleanArg = arg.TrimStart('-');
                 string cleanKey = key.TrimStart('-');
                 if (cleanArg.StartsWith(cleanKey + "="))
@@ -125,16 +138,8 @@ namespace LauncherUpdater
                 string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
                 string link = Path.Combine(desktop, nome + ".lnk");
                 if (File.Exists(link)) File.Delete(link);
-
-                // Cria o novo via PowerShell (rápido e nativo)
-                string ps = $"-NoProfile -Command \"$s=(New-Object -Com WScript.Shell).CreateShortcut('{link}');$s.TargetPath='{target}';$s.WorkingDirectory='{workDir}';$s.Save()\"";
-
-                Process.Start(new ProcessStartInfo("powershell", ps)
-                {
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    WindowStyle = ProcessWindowStyle.Hidden
-                })?.WaitForExit();
+                string ps = $"-NoProfile -Command \"$s=(New-Object -Com WScript.Shell).CreateShortcut('{link}');$s.TargetPath='{target}';$s.WorkingDirectory='{workDir}';$s.IconLocation='{target},0';$s.Description='PDV NewSystem';$s.Save()\"";
+                Process.Start(new ProcessStartInfo("powershell", ps) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden })?.WaitForExit();
             }
             catch { }
         }
@@ -142,11 +147,27 @@ namespace LauncherUpdater
         private static void CopyDirectory(string sourceDir, string targetDir)
         {
             Directory.CreateDirectory(targetDir);
+
+            // Copia Arquivos
             foreach (var file in Directory.GetFiles(sourceDir))
             {
                 string destFile = Path.Combine(targetDir, Path.GetFileName(file));
-                try { File.Copy(file, destFile, true); } catch { Thread.Sleep(200); try { File.Copy(file, destFile, true); } catch { } }
+                // Tenta copiar 3 vezes (caso o arquivo esteja travado brevemente)
+                for (int i = 0; i < 3; i++)
+                {
+                    try
+                    {
+                        File.Copy(file, destFile, true);
+                        break;
+                    }
+                    catch (IOException)
+                    {
+                        Thread.Sleep(500);
+                    }
+                }
             }
+
+            // Copia Subpastas (Recursivo)
             foreach (var subDir in Directory.GetDirectories(sourceDir))
             {
                 string destSubDir = Path.Combine(targetDir, new DirectoryInfo(subDir).Name);
