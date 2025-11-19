@@ -9,261 +9,263 @@ namespace LauncherUpdater
 {
     internal class Program
     {
-        // Nome do executável principal para reabrir no final
+        // Onde o fofoqueiro vai escrever
+        static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
         static string _exeNameSolicitado = "PDV_Launcher.exe";
-        static string _logPath = "";
 
         static void Main(string[] args)
         {
             try
             {
-                // Define local de log temporário até sabermos o diretório final
-                _logPath = Path.Combine(Path.GetTempPath(), "updater_init_log.txt");
-                Log("Iniciando Updater...");
+                // Limpa o log antigo para começar uma nova história
+                File.WriteAllText(_caminhoLogDesktop, $"--- INICIO DA NARRAÇÃO: {DateTime.Now} ---\n");
+                Narrar("O Updater acordou! Estou rodando.");
+                Narrar($"Recebi {args.Length} argumentos: {string.Join(" ", args)}");
+
+                if (args.Length == 0)
+                {
+                    Narrar("ERRO: Não recebi nenhum argumento! Não sei o que fazer. Vou dormir.");
+                    return;
+                }
 
                 if (args.Contains("--fix-mode"))
                 {
+                    Narrar("Modo de correção de nome detectado.");
                     ExecutarCorrecaoNome(args);
                     return;
                 }
 
-                if (args.Length > 0)
-                {
-                    ExecutarAtualizacaoPadrao(args);
-                }
+                ExecutarAtualizacaoPadrao(args);
             }
             catch (Exception ex)
             {
-                Log($"ERRO FATAL NO MAIN: {ex}");
+                Narrar("\n------------------------------------------------");
+                Narrar("!!! ERRO CATASTRÓFICO NÃO TRATADO !!!");
+                Narrar(ex.ToString());
+                Narrar("------------------------------------------------");
+            }
+            finally
+            {
+                Narrar($"\nFim da execução em {DateTime.Now}.");
             }
         }
 
         private static void ExecutarAtualizacaoPadrao(string[] args)
         {
+            // 1. PARSING
+            Narrar("Lendo argumentos...");
             int parentPid = int.Parse(GetArg(args, "--pid"));
             string zipPath = GetArg(args, "--zip-path");
             string targetDir = GetArg(args, "--target-dir");
             _exeNameSolicitado = GetArg(args, "--exe-name");
 
-            // Agora que temos o targetDir, movemos o log para lá para ficar persistente
-            if (!string.IsNullOrEmpty(targetDir))
+            Narrar($"PID do Pai (Launcher): {parentPid}");
+            Narrar($"Arquivo ZIP baixado: {zipPath}");
+            Narrar($"Pasta de Destino (Onde vou instalar): {targetDir}");
+            Narrar($"Executável para reabrir: {_exeNameSolicitado}");
+
+            // 2. VERIFICAÇÕES BÁSICAS
+            if (!File.Exists(zipPath))
             {
-                _logPath = Path.Combine(targetDir, "updater_last_run.log");
-                if (File.Exists(_logPath)) File.Delete(_logPath); // Limpa log antigo
+                Narrar("ERRO CRÍTICO: O arquivo ZIP não existe no caminho informado! Abortando.");
+                return;
+            }
+            if (!Directory.Exists(targetDir))
+            {
+                Narrar("AVISO: A pasta de destino não existe. Vou tentar criar.");
             }
 
-            Log($"Diretório Alvo: {targetDir}");
-            Log($"Arquivo ZIP: {zipPath}");
-
-            // 1. Garantir que o Launcher (e processos filhos) morreram
-            Log("Aguardando fechamento do Launcher...");
-            GarantirProcessoMorto(parentPid);
-            ForcarLimpezaDeProcessosTravados(targetDir);
-
-            // 2. Prepara extração
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), "PDV_Update_" + Guid.NewGuid().ToString().Substring(0, 8));
-            Log($"Extraindo para temporário: {tempExtractDir}");
-
-            try
-            {
-                if (File.Exists(zipPath))
-                {
-                    Directory.CreateDirectory(tempExtractDir);
-                    ZipFile.ExtractToDirectory(zipPath, tempExtractDir, true);
-
-                    // 3. Copia os arquivos (Sobrescrevendo)
-                    Log("Iniciando cópia de arquivos...");
-                    CopyDirectory(tempExtractDir, targetDir);
-                    Log("Cópia finalizada com sucesso.");
-                }
-                else
-                {
-                    Log("ERRO: Arquivo ZIP não encontrado na origem.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log($"ERRO DURANTE ATUALIZAÇÃO: {ex}");
-                throw; // Relança para cair no catch do Main se necessário
-            }
-            finally
-            {
-                // Limpeza
-                Log("Limpando arquivos temporários...");
-                try { if (Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { }
-                try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
-            }
-
-            // 4. Reabre o Launcher
-            string exeParaIniciar = Path.Combine(targetDir, _exeNameSolicitado);
-            Log($"Tentando iniciar: {exeParaIniciar}");
-
-            if (File.Exists(exeParaIniciar))
+            // 3. MATANDO PROCESSOS
+            Narrar("Passo 1: Garantir que ninguém está usando os arquivos...");
+            if (parentPid > 0)
             {
                 try
                 {
-                    Process.Start(new ProcessStartInfo(exeParaIniciar) { WorkingDirectory = targetDir, UseShellExecute = true });
-                    Log("Launcher reiniciado.");
+                    Process p = Process.GetProcessById(parentPid);
+                    Narrar($"O processo pai ({parentPid}) ainda está vivo. Esperando ele fechar...");
+                    p.WaitForExit(5000); // Espera 5s
+                    if (!p.HasExited)
+                    {
+                        Narrar("Ele não quis fechar por bem. Vou matar ele agora.");
+                        p.Kill();
+                    }
+                    else
+                    {
+                        Narrar("O processo pai fechou pacificamente.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Log($"Falha ao reiniciar launcher: {ex.Message}");
+                    Narrar($"O processo pai já sumiu ou não consegui acessar: {ex.Message}");
                 }
             }
-        }
 
-        private static void ExecutarCorrecaoNome(string[] args)
-        {
-            // Mantive sua lógica original aqui, apenas adicionando Log
-            int pid = int.Parse(GetArg(args, "--pid"));
-            string dir = GetArg(args, "--dir");
-            string oldName = GetArg(args, "--old");
-            string newName = GetArg(args, "--new");
-            string pathOld = Path.Combine(dir, oldName);
-            string pathNew = Path.Combine(dir, newName);
+            // Mata zumbis na pasta
+            Narrar("Procurando processos zumbis travando a pasta...");
+            MatarProcessosNaPasta(targetDir);
 
-            _logPath = Path.Combine(dir, "updater_fix_log.txt");
+            // 4. EXTRAÇÃO
+            string tempFolder = Path.Combine(Path.GetTempPath(), "Extracao_" + Guid.NewGuid().ToString().Substring(0, 5));
+            Narrar($"Passo 2: Extraindo arquivos para pasta temporária: {tempFolder}");
 
             try
             {
-                if (pid > 0) Process.GetProcessById(pid).WaitForExit(5000);
+                Directory.CreateDirectory(tempFolder);
+                ZipFile.ExtractToDirectory(zipPath, tempFolder, true);
+                Narrar("Extração do ZIP concluída com sucesso.");
             }
-            catch { }
-
-            Thread.Sleep(1000);
-
-            if (File.Exists(pathOld))
+            catch (Exception ex)
             {
-                if (File.Exists(pathNew)) try { File.Delete(pathNew); } catch { }
-                File.Move(pathOld, pathNew);
-                Log($"Renomeado de {oldName} para {newName}");
+                Narrar($"ERRO NA EXTRAÇÃO: {ex.Message}");
+                throw;
             }
 
-            CorrigirAtalho("PDV NewSystem", pathNew, dir);
+            // 5. CÓPIA INTELIGENTE
+            Narrar("Passo 3: Movendo arquivos para a pasta real...");
+            string origemReal = tempFolder;
 
-            if (File.Exists(pathNew))
-                Process.Start(new ProcessStartInfo(pathNew) { WorkingDirectory = dir, UseShellExecute = true });
-        }
+            // Verifica se criou subpasta
+            var dirs = Directory.GetDirectories(tempFolder);
+            var files = Directory.GetFiles(tempFolder);
+            if (files.Length == 0 && dirs.Length == 1)
+            {
+                Narrar($"Notei que o ZIP tinha uma pasta dentro ('{new DirectoryInfo(dirs[0]).Name}'). Entrando nela.");
+                origemReal = dirs[0];
+            }
 
-        // --- MÉTODOS AUXILIARES ROBUSTOS ---
+            CopiarRecursivo(origemReal, targetDir);
 
-        private static void Log(string msg)
-        {
+            // 6. LIMPEZA
+            Narrar("Passo 4: Limpando a bagunça...");
             try
             {
-                string logLine = $"[{DateTime.Now:HH:mm:ss}] {msg}{Environment.NewLine}";
-                File.AppendAllText(_logPath, logLine);
-                Console.WriteLine(msg); // Para debug se rodar via cmd
+                if (Directory.Exists(tempFolder)) Directory.Delete(tempFolder, true);
+                if (File.Exists(zipPath)) File.Delete(zipPath);
+                Narrar("Arquivos temporários apagados.");
             }
-            catch { /* Se falhar log, paciência */ }
-        }
+            catch (Exception ex) { Narrar($"Falha na limpeza (não crítico): {ex.Message}"); }
 
-        private static void GarantirProcessoMorto(int pid)
-        {
-            if (pid <= 0) return;
-            try
+            // 7. REINÍCIO
+            string caminhoExeFinal = Path.Combine(targetDir, _exeNameSolicitado);
+            Narrar($"Passo 5: Tentando reabrir o Launcher em: {caminhoExeFinal}");
+
+            if (File.Exists(caminhoExeFinal))
             {
-                Process p = Process.GetProcessById(pid);
-                p.WaitForExit(5000); // Espera 5s educadamente
-                if (!p.HasExited)
+                try
                 {
-                    Log($"Processo {pid} ainda ativo. Forçando encerramento...");
-                    p.Kill(); // Mata sem piedade
+                    Process.Start(new ProcessStartInfo(caminhoExeFinal) { WorkingDirectory = targetDir, UseShellExecute = true });
+                    Narrar("SUCESSO: Launcher reiniciado! Meu trabalho aqui acabou.");
+                }
+                catch (Exception ex)
+                {
+                    Narrar($"ERRO AO REINICIAR: {ex.Message}");
                 }
             }
-            catch { /* Processo já não existe */ }
+            else
+            {
+                Narrar("ERRO CRÍTICO: O executável do Launcher SUMIU! A atualização pode ter deletado ele sem colocar o novo.");
+            }
         }
 
-        private static void ForcarLimpezaDeProcessosTravados(string targetDir)
+        // --- AJUDANTES DO NARRADOR ---
+
+        static void Narrar(string texto)
         {
-            // Procura qualquer processo rodando a partir do diretório de instalação
-            // Isso evita erro de "Arquivo em uso" ao tentar copiar o executável principal
             try
             {
-                var processes = Process.GetProcesses()
-                                       .Where(p =>
-                                       {
-                                           try { return p.MainModule != null && p.MainModule.FileName.StartsWith(targetDir, StringComparison.OrdinalIgnoreCase); }
-                                           catch { return false; }
-                                       });
-
-                foreach (var p in processes)
-                {
-                    if (p.Id != Process.GetCurrentProcess().Id) // Não mata a si mesmo
-                    {
-                        Log($"Matando processo zumbi na pasta alvo: {p.ProcessName} ({p.Id})");
-                        try { p.Kill(); } catch { }
-                    }
-                }
+                string linha = $"[{DateTime.Now:HH:mm:ss}] {texto}\n";
+                File.AppendAllText(_caminhoLogDesktop, linha);
+                Console.WriteLine(texto); // Caso você rode via CMD pra testar
             }
-            catch (Exception ex) { Log($"Aviso na limpeza de processos: {ex.Message}"); }
+            catch { /* Se não der pra escrever o log, não tem o que fazer */ }
         }
 
-        private static string GetArg(string[] args, string key)
+        static string GetArg(string[] args, string key)
         {
             foreach (var arg in args)
             {
-                string cleanArg = arg.TrimStart('-');
-                string cleanKey = key.TrimStart('-');
-                if (cleanArg.StartsWith(cleanKey + "="))
-                    return cleanArg.Split(new[] { '=' }, 2)[1].Trim('"');
+                string a = arg.TrimStart('-');
+                string k = key.TrimStart('-');
+                if (a.StartsWith(k + "="))
+                    return a.Split(new[] { '=' }, 2)[1].Trim('"');
             }
             return "";
         }
 
-        private static void CorrigirAtalho(string nome, string target, string workDir)
+        static void MatarProcessosNaPasta(string dir)
         {
-            // Sua lógica original de atalho (PowerShell)
             try
             {
-                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
-                string link = Path.Combine(desktop, nome + ".lnk");
-                if (File.Exists(link)) File.Delete(link);
-                string ps = $"-NoProfile -Command \"$s=(New-Object -Com WScript.Shell).CreateShortcut('{link}');$s.TargetPath='{target}';$s.WorkingDirectory='{workDir}';$s.IconLocation='{target},0';$s.Description='PDV NewSystem';$s.Save()\"";
-                Process.Start(new ProcessStartInfo("powershell", ps) { CreateNoWindow = true, UseShellExecute = false, WindowStyle = ProcessWindowStyle.Hidden })?.WaitForExit();
-            }
-            catch { }
-        }
-
-        private static void CopyDirectory(string sourceDir, string targetDir)
-        {
-            Directory.CreateDirectory(targetDir);
-
-            foreach (var file in Directory.GetFiles(sourceDir))
-            {
-                string destFile = Path.Combine(targetDir, Path.GetFileName(file));
-
-                // Tenta copiar com retries (Exponential Backoff)
-                bool copiou = false;
-                for (int i = 0; i < 5; i++)
+                var todosProcessos = Process.GetProcesses();
+                foreach (var p in todosProcessos)
                 {
                     try
                     {
-                        File.Copy(file, destFile, true);
+                        if (p.Id == Process.GetCurrentProcess().Id) continue; // Não me mata!
+                        if (p.MainModule != null && p.MainModule.FileName.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            Narrar($" -> Matando processo travado: {p.ProcessName} (PID: {p.Id})");
+                            p.Kill();
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch (Exception ex) { Narrar($"Erro ao buscar processos travados: {ex.Message}"); }
+        }
+
+        static void CopiarRecursivo(string origem, string destino)
+        {
+            // Cria destino se não existir
+            Directory.CreateDirectory(destino);
+
+            // Copia Arquivos
+            foreach (var arquivo in Directory.GetFiles(origem))
+            {
+                string nomeArquivo = Path.GetFileName(arquivo);
+                string destinoArquivo = Path.Combine(destino, nomeArquivo);
+
+                Narrar($"   -> Copiando: {nomeArquivo}");
+
+                bool copiou = false;
+                for (int i = 1; i <= 5; i++) // 5 Tentativas
+                {
+                    try
+                    {
+                        File.Copy(arquivo, destinoArquivo, true);
                         copiou = true;
                         break;
                     }
-                    catch (IOException)
+                    catch (IOException ioEx)
                     {
-                        Log($"Arquivo bloqueado: {Path.GetFileName(file)}. Tentativa {i + 1}/5...");
-                        Thread.Sleep(500 * (i + 1)); // Espera 500ms, 1s, 1.5s...
+                        Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
+                        Thread.Sleep(1000); // Espera 1s
                     }
-                    catch (UnauthorizedAccessException)
+                    catch (UnauthorizedAccessException authEx)
                     {
-                        Log($"Erro de permissão em: {Path.GetFileName(file)}. Tentando remover Atributo ReadOnly...");
-                        try { File.SetAttributes(destFile, FileAttributes.Normal); } catch { }
-                        Thread.Sleep(200);
+                        Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
+                        try { File.SetAttributes(destinoArquivo, FileAttributes.Normal); } catch { }
+                        Thread.Sleep(500);
                     }
                 }
 
-                if (!copiou) Log($"ERRO CRÍTICO: Não foi possível copiar {Path.GetFileName(file)} após 5 tentativas.");
+                if (!copiou)
+                {
+                    Narrar($"      XXX FALHA CRÍTICA: Desisti de copiar {nomeArquivo} após 5 tentativas.");
+                    throw new Exception($"Falha ao copiar {nomeArquivo}");
+                }
             }
 
-            foreach (var subDir in Directory.GetDirectories(sourceDir))
+            // Copia Subpastas
+            foreach (var dir in Directory.GetDirectories(origem))
             {
-                string destSubDir = Path.Combine(targetDir, new DirectoryInfo(subDir).Name);
-                CopyDirectory(subDir, destSubDir);
+                string nomeDir = new DirectoryInfo(dir).Name;
+                string destinoDir = Path.Combine(destino, nomeDir);
+                CopiarRecursivo(dir, destinoDir);
             }
         }
+
+        // Mantido para compatibilidade, mas vazio por enquanto
+        private static void ExecutarCorrecaoNome(string[] args) { Narrar("Executando correção de nome (dummy)..."); }
     }
 }
