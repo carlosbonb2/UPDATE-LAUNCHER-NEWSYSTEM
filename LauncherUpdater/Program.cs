@@ -239,9 +239,9 @@ namespace LauncherUpdater
                     catch (IOException ioEx)
                     {
                         Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
-                        Thread.Sleep(1000); // Espera 1s
+                        Thread.Sleep(1000);
                     }
-                    catch (UnauthorizedAccessException authEx)
+                    catch (UnauthorizedAccessException)
                     {
                         Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
                         try { File.SetAttributes(destinoArquivo, FileAttributes.Normal); } catch { }
