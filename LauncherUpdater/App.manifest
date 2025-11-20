@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+<assemblyIdentity version="1.0.0.0" name="LauncherUpdater.app" />
+
+<trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+	<security>
+		<requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+			<!--
+				Executa o aplicativo com privilégios elevados (Admin).
+				Isso fará com que o Windows solicite o UAC (User Account Control)
+				antes de iniciar o executável.
+			-->
+			<requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+		</requestedPrivileges>
+	</security>
+</trustInfo>
+
+<compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+	<application>
+		<!-- Suporte para Windows 10/11 -->
+		<supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+		<!-- Suporte para Windows 8.1 -->
+		<supportedOS Id="{1f676c76-80e1-4239-95bb-847b7fc93b66}" />
+		<!-- Suporte para Windows 7 -->
+		<supportedOS Id="{35138b9a-5d96-4fbd-8c2e-df260e520021}" />
+	</application>
+</compatibility>
+
+
+</assembly>

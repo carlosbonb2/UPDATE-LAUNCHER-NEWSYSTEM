@@ -4,7 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
-using System.Windows; // Necessário para ProcessWindowStyle
+using System.Windows;
 
 namespace LauncherUpdater
 {
@@ -12,9 +12,8 @@ namespace LauncherUpdater
     {
         const string NOME_ATALHO = "PDV NewSystem";
 
-        // Onde o fofoqueiro vai escrever
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
-        static string _exeNameSolicitado = "PDV_Launcher.exe"; // Valor padrão, será sobrescrito pelo argumento --exe-name
+        static string _exeNameSolicitado = "PDV_Launcher.exe";
 
         static void Main(string[] args)
         {
@@ -67,7 +66,6 @@ namespace LauncherUpdater
             Narrar($"Pasta de Destino (Onde vou instalar): {targetDir}");
             Narrar($"Executável para reabrir: {_exeNameSolicitado}");
 
-            // 2. VERIFICAÇÕES BÁSICAS
             if (!File.Exists(zipPath))
             {
                 Narrar("ERRO CRÍTICO: O arquivo ZIP não existe no caminho informado! Abortando.");
@@ -78,7 +76,6 @@ namespace LauncherUpdater
                 Narrar("AVISO: A pasta de destino não existe. Vou tentar criar.");
             }
 
-            // 3. MATANDO PROCESSOS (MÚSCULO)
             Narrar("Passo 1: Garantir que ninguém está usando os arquivos...");
 
             // Tenta esperar o processo pai fechar
@@ -88,7 +85,7 @@ namespace LauncherUpdater
                 {
                     Process p = Process.GetProcessById(parentPid);
                     Narrar($"O processo pai ({parentPid}) ainda está vivo. Esperando ele fechar...");
-                    p.WaitForExit(5000); // Espera 5s
+                    p.WaitForExit(5000);
                     if (!p.HasExited)
                     {
                         Narrar("Ele não quis fechar por bem. Vou matar ele agora.");
@@ -105,11 +102,9 @@ namespace LauncherUpdater
                 }
             }
 
-            // Mata zumbis na pasta (Importante para DLLs e EXEs travados)
             Narrar("Procurando processos zumbis travando a pasta...");
             MatarProcessosNaPasta(targetDir);
 
-            // 4. EXTRAÇÃO
             string tempFolder = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 5));
             Narrar($"Passo 2: Extraindo arquivos para pasta temporária: {tempFolder}");
 
@@ -125,11 +120,9 @@ namespace LauncherUpdater
                 throw;
             }
 
-            // 5. CÓPIA INTELIGENTE
             Narrar("Passo 3: Movendo arquivos para a pasta real (com tentativas)...");
             string origemReal = tempFolder;
 
-            // Verifica se criou subpasta (ZIP com pasta raiz)
             var dirs = Directory.GetDirectories(tempFolder);
             var files = Directory.GetFiles(tempFolder);
             if (files.Length == 0 && dirs.Length == 1)
@@ -140,7 +133,6 @@ namespace LauncherUpdater
 
             CopiarRecursivo(origemReal, targetDir);
 
-            // 6. LIMPEZA
             Narrar("Passo 4: Limpando a bagunça...");
             try
             {
@@ -150,7 +142,6 @@ namespace LauncherUpdater
             }
             catch (Exception ex) { Narrar($"Falha na limpeza (não crítico): {ex.Message}"); }
 
-            // 7. REINÍCIO (SILENCIOSO)
             string caminhoExeFinal = Path.Combine(targetDir, _exeNameSolicitado);
             Narrar($"Passo 5: Tentando reabrir o executável em: {caminhoExeFinal}");
 
@@ -158,13 +149,12 @@ namespace LauncherUpdater
             {
                 try
                 {
-                    // Reinício silencioso (CreateNoWindow = true)
                     Process.Start(new ProcessStartInfo(caminhoExeFinal)
                     {
                         WorkingDirectory = targetDir,
                         UseShellExecute = true,
-                        CreateNoWindow = true, // Tenta não criar janela
-                        WindowStyle = ProcessWindowStyle.Hidden // Tenta esconder
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
                     });
                     Narrar("SUCESSO: Executável reiniciado! Meu trabalho aqui acabou.");
                 }
@@ -179,15 +169,13 @@ namespace LauncherUpdater
             }
         }
 
-        // --- MÉTODOS AUXILIARES ---
-
         static void Narrar(string texto)
         {
             try
             {
                 string linha = $"[{DateTime.Now:HH:mm:ss}] {texto}\n";
                 File.AppendAllText(_caminhoLogDesktop, linha);
-                Console.WriteLine(texto); // Caso você rode via CMD pra testar
+                Console.WriteLine(texto);
             }
             catch { /* Se não der pra escrever o log, não tem o que fazer */ }
         }
