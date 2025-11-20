@@ -4,7 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
-using System.Windows; // Adicionado para ProcessWindowStyle
+using System.Windows; // Necessário para ProcessWindowStyle
 
 namespace LauncherUpdater
 {
@@ -238,7 +238,7 @@ namespace LauncherUpdater
                 string nomeArquivo = Path.GetFileName(arquivo);
                 string destinoArquivo = Path.Combine(destino, nomeArquivo);
 
-                Narrar($"   -> Copiando: {nomeArquivo}");
+                Narrar($"   -> Copiando: {nomeArquivo}");
 
                 bool copiou = false;
                 for (int i = 1; i <= 5; i++) // 5 Tentativas
@@ -251,12 +251,12 @@ namespace LauncherUpdater
                     }
                     catch (IOException ioEx)
                     {
-                        Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
+                        Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
                         Thread.Sleep(1000);
                     }
                     catch (UnauthorizedAccessException)
                     {
-                        Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
+                        Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
                         try { File.SetAttributes(destinoArquivo, FileAttributes.Normal); } catch { }
                         Thread.Sleep(500);
                     }
@@ -264,7 +264,7 @@ namespace LauncherUpdater
 
                 if (!copiou)
                 {
-                    Narrar($"      XXX FALHA CRÍTICA: Desisti de copiar {nomeArquivo} após 5 tentativas.");
+                    Narrar($"      XXX FALHA CRÍTICA: Desisti de copiar {nomeArquivo} após 5 tentativas.");
                     throw new Exception($"Falha ao copiar {nomeArquivo}");
                 }
             }
