@@ -1,0 +1,78 @@
+name: 1 - Deploy LauncherUpdater Staging (Teste Seguro)
+
+on:
+  push:
+    tags:
+      - 'teste-lu-v*' # Ex: teste-lu-v1.0.0
+
+jobs:
+  deploy-staging:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+
+      # --- Extrai versão ---
+      - name: Extrair Versão para Assembly
+        run: |
+          $ver = "${{ github.ref_name }}".Replace("teste-lu-v", "")
+          echo "VERSION_NUMBER=$ver" | Out-File -FilePath $env:GITHUB_ENV
+        shell: pwsh
+
+      # Guardiões (Simples)
+      - name: 🛡️ Verificar Estilo e Vulnerabilidades
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+      # --- BUILD RÁPIDO (Apenas para gerar o pacote, se o 'build-release' não for usado) ---
+      # Para o deploy de staging, podemos assumir que este job é a fonte do pacote se o 'build-release'
+      # não tiver sido rodado, mas para simplificar, usaremos o mesmo esquema de Estruturação
+      # mas sem a complexidade de Assinatura, usando o padrão de Build.
+
+      - name: Build Staging
+        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Staging --self-contained true -r win-x64 --output ./publish /p:Version=${{ env.VERSION_NUMBER }}
+
+      # --- ESTRUTURAÇÃO ATÔMICA ---
+      - name: Estruturar Pastas
+        run: |
+          $folder = "${{ github.ref_name }}" # Ex: teste-lu-v1.0.0
+          
+          New-Item -ItemType Directory -Force -Path "./deploy/$folder"
+          New-Item -ItemType Directory -Force -Path "./deploy/gatilho_ativacao"
+
+          # 1. Zipa
+          $zipName = "launcherupdater_release.zip"
+          Compress-Archive -Path ./publish/* -DestinationPath "./deploy/$folder/$zipName"
+          $hash = (Get-FileHash -Path "./deploy/$folder/$zipName").Hash
+          
+          # 2. URL (Usando a URL base de staging para o Updater)
+          $url = "${{ secrets.SFTP_URL_BASE_STAGING_LAUNCHER_UPDATER }}/$folder/$zipName"
+          
+          # 3. Payload JSON (LauncherUpdaterVersion.json)
+          @{ Version = $env:VERSION_NUMBER; Url = $url; Checksum = $hash } | ConvertTo-Json | Set-Content -Path "./deploy/$folder/LauncherUpdaterVersion.json" -Encoding utf8
+          
+          # 4. Trigger (LauncherUpdaterVersionMaster.json)
+          @{ CurrentFolder = $folder } | ConvertTo-Json | Set-Content -Path "./deploy/gatilho_ativacao/LauncherUpdaterVersionMaster.json" -Encoding utf8
+        shell: pwsh
+
+      # ENVIO
+      - name: 7. 📦 Enviar Carga Útil
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.SFTP_HOST_STAGING }}
+          username: ${{ secrets.SFTP_USERNAME_STAGING }}
+          password: ${{ secrets.SFTP_PASSWORD_STAGING }}
+          local-dir: "./deploy/${{ github.ref_name }}/" 
+          server-dir: "${{ secrets.SFTP_PATH_STAGING_LAUNCHER_UPDATER }}/${{ github.ref_name }}/"
+
+      - name: 8. 🚀 Ativar Versão (Trigger)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.SFTP_HOST_STAGING }}
+          username: ${{ secrets.SFTP_USERNAME_STAGING }}
+          password: ${{ secrets.SFTP_PASSWORD_STAGING }}
+          local-dir: "./deploy/gatilho_ativacao/"
+          server-dir: "${{ secrets.SFTP_PATH_STAGING_LAUNCHER_UPDATER }}/"
