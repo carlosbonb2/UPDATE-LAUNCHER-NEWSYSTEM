@@ -4,14 +4,17 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using System.Windows; // Adicionado para ProcessWindowStyle
 
 namespace LauncherUpdater
 {
     internal class Program
     {
+        const string NOME_ATALHO = "PDV NewSystem";
+
         // Onde o fofoqueiro vai escrever
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
-        static string _exeNameSolicitado = "PDV_Launcher.exe";
+        static string _exeNameSolicitado = "PDV_Launcher.exe"; // Valor padrão, será sobrescrito pelo argumento --exe-name
 
         static void Main(string[] args)
         {
@@ -52,19 +55,12 @@ namespace LauncherUpdater
 
         private static void ExecutarAtualizacaoPadrao(string[] args)
         {
-            // 1. PARSING
+            // 1. PARSING E VARIAVEIS
             Narrar("Lendo argumentos...");
             int parentPid = int.Parse(GetArg(args, "--pid"));
-<<<<<<< HEAD
-            string zipPath = GetArg(args, "--zip-path"); // Caminho do arquivo .zip baixado
-            string targetDir = GetArg(args, "--target-dir"); // Pasta onde o PDV está instalado (Pasta App ou Launcher)
-            string exeNameSolicitado = GetArg(args, "--exe-name");
-
-            // 1. Espera o processo pai fechar (Launcher ou PDV)
-=======
             string zipPath = GetArg(args, "--zip-path");
             string targetDir = GetArg(args, "--target-dir");
-            _exeNameSolicitado = GetArg(args, "--exe-name");
+            _exeNameSolicitado = GetArg(args, "--exe-name"); // Atualiza a variável estática
 
             Narrar($"PID do Pai (Launcher): {parentPid}");
             Narrar($"Arquivo ZIP baixado: {zipPath}");
@@ -82,9 +78,10 @@ namespace LauncherUpdater
                 Narrar("AVISO: A pasta de destino não existe. Vou tentar criar.");
             }
 
-            // 3. MATANDO PROCESSOS
+            // 3. MATANDO PROCESSOS (MÚSCULO)
             Narrar("Passo 1: Garantir que ninguém está usando os arquivos...");
->>>>>>> d22d3233c85c742e391ae96fe235b09ce943b19b
+
+            // Tenta esperar o processo pai fechar
             if (parentPid > 0)
             {
                 try
@@ -108,30 +105,12 @@ namespace LauncherUpdater
                 }
             }
 
-<<<<<<< HEAD
-            string tempExtractDir = string.Empty;
-
-            try
-            {
-                if (File.Exists(zipPath))
-                {
-                    tempExtractDir = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 8));
-
-                    // Cria pasta temporária e extrai o ZIP lá dentro
-                    Directory.CreateDirectory(tempExtractDir);
-                    ZipFile.ExtractToDirectory(zipPath, tempExtractDir, true);
-
-                    // 2. Copia os arquivos extraídos (incluindo local_version.txt) para a pasta de instalação (Sobrescrevendo)
-                    // Esta função usa uma lógica de 3 tentativas para contornar problemas de bloqueio de arquivo.
-                    CopyDirectory(tempExtractDir, targetDir);
-                }
-=======
-            // Mata zumbis na pasta
+            // Mata zumbis na pasta (Importante para DLLs e EXEs travados)
             Narrar("Procurando processos zumbis travando a pasta...");
             MatarProcessosNaPasta(targetDir);
 
             // 4. EXTRAÇÃO
-            string tempFolder = Path.Combine(Path.GetTempPath(), "Extracao_" + Guid.NewGuid().ToString().Substring(0, 5));
+            string tempFolder = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 5));
             Narrar($"Passo 2: Extraindo arquivos para pasta temporária: {tempFolder}");
 
             try
@@ -139,7 +118,6 @@ namespace LauncherUpdater
                 Directory.CreateDirectory(tempFolder);
                 ZipFile.ExtractToDirectory(zipPath, tempFolder, true);
                 Narrar("Extração do ZIP concluída com sucesso.");
->>>>>>> d22d3233c85c742e391ae96fe235b09ce943b19b
             }
             catch (Exception ex)
             {
@@ -148,33 +126,14 @@ namespace LauncherUpdater
             }
 
             // 5. CÓPIA INTELIGENTE
-            Narrar("Passo 3: Movendo arquivos para a pasta real...");
+            Narrar("Passo 3: Movendo arquivos para a pasta real (com tentativas)...");
             string origemReal = tempFolder;
 
-            // Verifica se criou subpasta
+            // Verifica se criou subpasta (ZIP com pasta raiz)
             var dirs = Directory.GetDirectories(tempFolder);
             var files = Directory.GetFiles(tempFolder);
             if (files.Length == 0 && dirs.Length == 1)
             {
-<<<<<<< HEAD
-                // Limpeza: Apaga a pasta temporária e o ZIP
-                try { if (!string.IsNullOrEmpty(tempExtractDir) && Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { }
-                try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
-            }
-
-            // 3. Reabre o executável solicitado (PDV ou Launcher)
-            string exeParaIniciar = Path.Combine(targetDir, exeNameSolicitado);
-            if (File.Exists(exeParaIniciar))
-            {
-                // Inicia o processo de forma oculta para uma atualização limpa (silenciosa)
-                Process.Start(new ProcessStartInfo(exeParaIniciar)
-                {
-                    WorkingDirectory = targetDir,
-                    UseShellExecute = true,
-                    CreateNoWindow = true, // Tenta não criar janela
-                    WindowStyle = ProcessWindowStyle.Hidden // Tenta esconder
-                });
-=======
                 Narrar($"Notei que o ZIP tinha uma pasta dentro ('{new DirectoryInfo(dirs[0]).Name}'). Entrando nela.");
                 origemReal = dirs[0];
             }
@@ -191,16 +150,23 @@ namespace LauncherUpdater
             }
             catch (Exception ex) { Narrar($"Falha na limpeza (não crítico): {ex.Message}"); }
 
-            // 7. REINÍCIO
+            // 7. REINÍCIO (SILENCIOSO)
             string caminhoExeFinal = Path.Combine(targetDir, _exeNameSolicitado);
-            Narrar($"Passo 5: Tentando reabrir o Launcher em: {caminhoExeFinal}");
+            Narrar($"Passo 5: Tentando reabrir o executável em: {caminhoExeFinal}");
 
             if (File.Exists(caminhoExeFinal))
             {
                 try
                 {
-                    Process.Start(new ProcessStartInfo(caminhoExeFinal) { WorkingDirectory = targetDir, UseShellExecute = true });
-                    Narrar("SUCESSO: Launcher reiniciado! Meu trabalho aqui acabou.");
+                    // Reinício silencioso (CreateNoWindow = true)
+                    Process.Start(new ProcessStartInfo(caminhoExeFinal)
+                    {
+                        WorkingDirectory = targetDir,
+                        UseShellExecute = true,
+                        CreateNoWindow = true, // Tenta não criar janela
+                        WindowStyle = ProcessWindowStyle.Hidden // Tenta esconder
+                    });
+                    Narrar("SUCESSO: Executável reiniciado! Meu trabalho aqui acabou.");
                 }
                 catch (Exception ex)
                 {
@@ -209,12 +175,11 @@ namespace LauncherUpdater
             }
             else
             {
-                Narrar("ERRO CRÍTICO: O executável do Launcher SUMIU! A atualização pode ter deletado ele sem colocar o novo.");
->>>>>>> d22d3233c85c742e391ae96fe235b09ce943b19b
+                Narrar("ERRO CRÍTICO: O executável final SUMIU!");
             }
         }
 
-        // --- AJUDANTES DO NARRADOR ---
+        // --- MÉTODOS AUXILIARES ---
 
         static void Narrar(string texto)
         {
@@ -249,6 +214,7 @@ namespace LauncherUpdater
                     try
                     {
                         if (p.Id == Process.GetCurrentProcess().Id) continue; // Não me mata!
+                        // Verifica se o caminho principal do módulo do processo começa com a pasta de destino
                         if (p.MainModule != null && p.MainModule.FileName.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
                         {
                             Narrar($" -> Matando processo travado: {p.ProcessName} (PID: {p.Id})");
@@ -272,7 +238,7 @@ namespace LauncherUpdater
                 string nomeArquivo = Path.GetFileName(arquivo);
                 string destinoArquivo = Path.Combine(destino, nomeArquivo);
 
-                Narrar($"   -> Copiando: {nomeArquivo}");
+                Narrar($"   -> Copiando: {nomeArquivo}");
 
                 bool copiou = false;
                 for (int i = 1; i <= 5; i++) // 5 Tentativas
@@ -285,12 +251,12 @@ namespace LauncherUpdater
                     }
                     catch (IOException ioEx)
                     {
-                        Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
+                        Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
                         Thread.Sleep(1000);
                     }
                     catch (UnauthorizedAccessException)
                     {
-                        Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
+                        Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
                         try { File.SetAttributes(destinoArquivo, FileAttributes.Normal); } catch { }
                         Thread.Sleep(500);
                     }
@@ -298,7 +264,7 @@ namespace LauncherUpdater
 
                 if (!copiou)
                 {
-                    Narrar($"      XXX FALHA CRÍTICA: Desisti de copiar {nomeArquivo} após 5 tentativas.");
+                    Narrar($"      XXX FALHA CRÍTICA: Desisti de copiar {nomeArquivo} após 5 tentativas.");
                     throw new Exception($"Falha ao copiar {nomeArquivo}");
                 }
             }
