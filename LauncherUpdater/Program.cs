@@ -40,10 +40,10 @@ namespace LauncherUpdater
         {
             int parentPid = int.Parse(GetArg(args, "--pid"));
             string zipPath = GetArg(args, "--zip-path"); // Caminho do arquivo .zip baixado
-            string targetDir = GetArg(args, "--target-dir"); // Pasta onde o PDV está instalado
+            string targetDir = GetArg(args, "--target-dir"); // Pasta onde o PDV está instalado (Pasta App ou Launcher)
             string exeNameSolicitado = GetArg(args, "--exe-name");
 
-            // 1. Espera o Launcher fechar (para soltar os arquivos)
+            // 1. Espera o processo pai fechar (Launcher ou PDV)
             if (parentPid > 0)
             {
                 try
@@ -55,18 +55,20 @@ namespace LauncherUpdater
             }
             Thread.Sleep(1000); // Respira fundo
 
-            // 2. Prepara extração
-            string tempExtractDir = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 8));
+            string tempExtractDir = string.Empty;
 
             try
             {
                 if (File.Exists(zipPath))
                 {
+                    tempExtractDir = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 8));
+
                     // Cria pasta temporária e extrai o ZIP lá dentro
                     Directory.CreateDirectory(tempExtractDir);
                     ZipFile.ExtractToDirectory(zipPath, tempExtractDir, true);
 
-                    // 3. Copia os arquivos extraídos para a pasta de instalação (Sobrescrevendo)
+                    // 2. Copia os arquivos extraídos (incluindo local_version.txt) para a pasta de instalação (Sobrescrevendo)
+                    // Esta função usa uma lógica de 3 tentativas para contornar problemas de bloqueio de arquivo.
                     CopyDirectory(tempExtractDir, targetDir);
                 }
             }
@@ -78,15 +80,22 @@ namespace LauncherUpdater
             finally
             {
                 // Limpeza: Apaga a pasta temporária e o ZIP
-                try { if (Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { }
+                try { if (!string.IsNullOrEmpty(tempExtractDir) && Directory.Exists(tempExtractDir)) Directory.Delete(tempExtractDir, true); } catch { }
                 try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
             }
 
-            // 4. Reabre o Launcher atualizado
+            // 3. Reabre o executável solicitado (PDV ou Launcher)
             string exeParaIniciar = Path.Combine(targetDir, exeNameSolicitado);
             if (File.Exists(exeParaIniciar))
             {
-                Process.Start(new ProcessStartInfo(exeParaIniciar) { WorkingDirectory = targetDir, UseShellExecute = true });
+                // Inicia o processo de forma oculta para uma atualização limpa (silenciosa)
+                Process.Start(new ProcessStartInfo(exeParaIniciar)
+                {
+                    WorkingDirectory = targetDir,
+                    UseShellExecute = true,
+                    CreateNoWindow = true, // Tenta não criar janela
+                    WindowStyle = ProcessWindowStyle.Hidden // Tenta esconder
+                });
             }
         }
 
