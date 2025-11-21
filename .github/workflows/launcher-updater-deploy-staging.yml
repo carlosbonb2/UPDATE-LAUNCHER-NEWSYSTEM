@@ -27,14 +27,10 @@ jobs:
       - name: 🛡️ Verificar Estilo e Vulnerabilidades
         run: dotnet format --verify-no-changes --verbosity diagnostic
 
-      # --- BUILD RÁPIDO (Apenas para gerar o pacote, se o 'build-release' não for usado) ---
-      # Para o deploy de staging, podemos assumir que este job é a fonte do pacote se o 'build-release'
-      # não tiver sido rodado, mas para simplificar, usaremos o mesmo esquema de Estruturação
-      # mas sem a complexidade de Assinatura, usando o padrão de Build.
-
-      - name: Build Staging
-        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Staging --self-contained true -r win-x64 --output ./publish /p:Version=${{ env.VERSION_NUMBER }}
-
+      # --- BUILD CORRIGIDO: Usa 'Release' e injeta o símbolo 'STAGING' ---
+      - name: Build Staging (Injetando Símbolo)
+        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:Version=${{ env.VERSION_NUMBER }} /p:DefineConstants="STAGING"
+        #                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ CORREÇÃO AQUI
       # --- ESTRUTURAÇÃO ATÔMICA ---
       - name: Estruturar Pastas
         run: |

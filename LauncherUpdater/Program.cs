@@ -23,6 +23,14 @@ namespace LauncherUpdater
                 // 1. Cooperação na Limpeza: Tenta apagar a versão temporária de uma execução anterior
                 LimparUpdaterTemporario();
 
+                if (args.Contains("--test-io"))
+                {
+                    ExecutarTesteIntegradoIO(args);
+                    return;
+                }
+
+                ExecutarAtualizacaoPadrao(args);
+
                 // 2. Início do Log
                 File.WriteAllText(_caminhoLogDesktop, $"--- INICIO DA NARRAÇÃO: {DateTime.Now} ---\n");
                 Narrar("O Updater acordou! Estou rodando.");
@@ -138,6 +146,110 @@ namespace LauncherUpdater
             AplicarAtualizacao(zipPath, targetDir, _exeNameSolicitado);
         }
 
+        // Dentro de LauncherUpdater/Program.cs
+
+        private static void ExecutarTesteIntegradoIO(string[] args)
+        {
+            Narrar("--- INICIANDO TESTE INTEGRADO DE I/O E ATUALIZAÇÃO ---");
+
+            // Definição do caminho base para todos os arquivos temporários
+            string basePath = Path.Combine(Path.GetTempPath(), $"PDV_TEST_ROOT_{Guid.NewGuid().ToString().Substring(0, 8)}");
+            string targetDir = Path.Combine(basePath, "App_PDV"); // Simula a pasta de destino do PDV (\App)
+            string zipPath = Path.Combine(basePath, "launcher_update_simulado.zip");
+            string zipSourceDir = Path.Combine(basePath, "ZipSource");
+            string exeName = "PDV_Newsystem.exe";
+            int pid = 9999;
+
+            // O arquivo que será bloqueado para forçar o Thread.Sleep
+            string arquivoBloqueado = Path.Combine(targetDir, "pdv_database.db");
+            FileStream? bloqueioStream = null;
+
+            try
+            {
+                // 1. Configuração do Ambiente
+                if (Directory.Exists(basePath))
+                    Directory.Delete(basePath, true);
+
+                Directory.CreateDirectory(targetDir);
+                Directory.CreateDirectory(zipSourceDir);
+
+                Narrar($"Pasta Base: {basePath}");
+                Narrar($"Pasta de Destino: {targetDir}");
+
+                // Simular um arquivo de destino que será bloqueado (o banco de dados)
+                File.WriteAllText(arquivoBloqueado, "DADOS ANTIGOS - BLOQUEAR ESTE!");
+
+                // Simular o BLOQUEIO DE ARQUIVO (usando FileShare.None)
+                bloqueioStream = new FileStream(arquivoBloqueado, FileMode.Open, FileAccess.Read, FileShare.None);
+                Narrar($"BLOQUEIO ATIVADO em '{Path.GetFileName(arquivoBloqueado)}' para forçar a espera (2000ms).");
+
+                // 2. Criação da Nova Versão (Simulando o Conteúdo do ZIP)
+                File.WriteAllText(Path.Combine(zipSourceDir, exeName), "NEW_EXE_CONTENT_V1.0.0");
+                File.WriteAllText(Path.Combine(zipSourceDir, "new_dll.dll"), "DLL_CONTENT");
+                File.WriteAllText(Path.Combine(zipSourceDir, "local_version.txt"), "1.0.0.0");
+
+                // Cria o ZIP simulado
+                ZipFile.CreateFromDirectory(zipSourceDir, zipPath);
+                Narrar("ZIP de atualização criado.");
+
+                // 3. Montar os Argumentos EXATOS que o Launcher passaria
+                string[] simulatedArgs = new string[]
+                {
+            $"--pid={pid}",
+            $"--zip-path=\"{zipPath}\"",
+            $"--target-dir=\"{targetDir}\"",
+            $"--exe-name=\"{exeName}\""
+                };
+
+                // 4. Execução da Função Alvo (ExecutarAtualizacaoPadrao)
+                Narrar("Chamando ExecutarAtualizacaoPadrao com argumentos simulados...");
+
+                // NOTA: Para este teste manual, comente o Process.Start final dentro de ExecutarAtualizacaoPadrao
+                // para que o fluxo termine e não inicie o executável fictício.
+                ExecutarAtualizacaoPadrao(simulatedArgs);
+
+                // 5. Liberação do Bloqueio
+                bloqueioStream.Close();
+                bloqueioStream.Dispose();
+
+                // 6. Verificação Pós-Execução (Confirma se o LauncherUpdater venceu o bloqueio)
+                Narrar("Verificando se a cópia forçada foi bem-sucedida...");
+                string finalExePath = Path.Combine(targetDir, exeName);
+
+                if (File.Exists(finalExePath) && File.ReadAllText(finalExePath) == "NEW_LAUNCHER_CONTENT")
+                {
+                    Narrar("VERIFICAÇÃO: Conteúdo do arquivo de destino foi atualizado (SUCESSO).");
+                }
+                else
+                {
+                    Narrar("ERRO: O conteúdo do arquivo de destino NÃO foi atualizado ou o executável não foi encontrado.");
+                }
+
+                Narrar("RESULTADO: SUCESSO. Fluxo de I/O testado.");
+            }
+            catch (Exception ex)
+            {
+                Narrar($"RESULTADO: FALHA CRÍTICA. O processo quebrou em I/O. Erro: {ex.Message}");
+            }
+            finally
+            {
+                // Garante que o stream de bloqueio seja sempre fechado
+                if (bloqueioStream != null)
+                {
+                    bloqueioStream.Close();
+                    bloqueioStream.Dispose();
+                }
+
+                // Limpeza Geral (para garantir)
+                try
+                {
+                    if (Directory.Exists(basePath))
+                        Directory.Delete(basePath, true);
+                }
+                catch { Narrar("Falha na limpeza final do diretório raiz de teste."); }
+                Narrar("--- TESTE INTEGRADO CONCLUÍDO ---");
+            }
+        }
         private static void AplicarAtualizacao(string zipPath, string targetDir, string exeNameFinal)
         {
             string tempFolder = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 5));
