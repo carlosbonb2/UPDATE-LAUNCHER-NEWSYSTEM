@@ -7,9 +7,9 @@
 	<security>
 		<requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
 			<!--
-				Executa o aplicativo com privilégios elevados (Admin).
-				Isso fará com que o Windows solicite o UAC (User Account Control)
-				antes de iniciar o executável.
+				Executa o aplicativo com privilï¿½gios elevados (Admin).
+				Isso farï¿½ com que o Windows solicite o UAC (User Account Control)
+				antes de iniciar o executï¿½vel.
 			-->
 			<requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
 		</requestedPrivileges>

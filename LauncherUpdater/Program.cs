@@ -9,7 +9,7 @@ namespace LauncherUpdater
 {
     internal class Program
     {
-        // const string NOME_ATALHO = "PDV NewSystem";
+        const string NOME_ATALHO = "PDV NewSystem";
         const string NOME_UPDATER_TEMPORARIO = "LauncherUpdater.tmp"; // Nome temporário que devemos apagar
 
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
@@ -50,7 +50,7 @@ namespace LauncherUpdater
             {
                 Narrar($"\nFim da execução em {DateTime.Now}.");
 
-                // 3. Limpeza Final do ZIP
+                // 3. Limpeza Final do ZIP (Se o processo não travou)
                 try
                 {
                     if (File.Exists(_caminhoZipDoLauncher)) File.Delete(_caminhoZipDoLauncher);
@@ -79,10 +79,7 @@ namespace LauncherUpdater
                 Narrar("ERRO CRÍTICO: O arquivo ZIP não existe no caminho informado! Abortando.");
                 return;
             }
-            if (!Directory.Exists(targetDir))
-            {
-                Narrar("AVISO: A pasta de destino não existe. Vou tentar criar.");
-            }
+            // Não verificamos Directory.Exists(targetDir) aqui, confiamos no Directory.CreateDirectory
 
             Narrar("Passo 1: Garantir que ninguém está usando os arquivos...");
 
@@ -112,6 +109,30 @@ namespace LauncherUpdater
 
             Narrar("Procurando processos zumbis travando a pasta...");
             MatarProcessosNaPasta(targetDir);
+
+            // NOVO: Garantir Acesso à Pasta de Destino
+            Narrar("Passo 2: Garantindo que a pasta de destino esteja acessível...");
+            try
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    if (Directory.Exists(targetDir)) break;
+
+                    Narrar($"Tentativa {i + 1}: Pasta não existe, tentando criar...");
+                    Directory.CreateDirectory(targetDir);
+
+                    if (i == 2)
+                    {
+                        throw new Exception($"Falha ao garantir o acesso/criação da pasta de destino: {targetDir}");
+                    }
+                    Thread.Sleep(500);
+                }
+            }
+            catch (Exception ex)
+            {
+                Narrar($"ERRO CRÍTICO: Não foi possível garantir o acesso à pasta alvo: {ex.Message}");
+                throw;
+            }
 
             // 2. EXECUTA O MOTOR DE ATUALIZAÇÃO
             AplicarAtualizacao(zipPath, targetDir, _exeNameSolicitado);
@@ -212,7 +233,7 @@ namespace LauncherUpdater
                 File.AppendAllText(_caminhoLogDesktop, linha);
                 Console.WriteLine(texto);
             }
-            catch { }
+            catch { /* Se não der pra escrever o log, não tem o que fazer */ }
         }
 
         static string GetArg(string[] args, string key)
@@ -236,7 +257,8 @@ namespace LauncherUpdater
                 {
                     try
                     {
-                        if (p.Id == Process.GetCurrentProcess().Id) continue;
+                        if (p.Id == Process.GetCurrentProcess().Id) continue; // Não me mata!
+                        // Verifica se o caminho principal do módulo do processo começa com a pasta de destino
                         if (p.MainModule != null && p.MainModule.FileName.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
                         {
                             Narrar($" -> Matando processo travado: {p.ProcessName} (PID: {p.Id})");
@@ -254,9 +276,51 @@ namespace LauncherUpdater
             // Cria destino se não existir
             Directory.CreateDirectory(destino);
 
-            // Copia Arquivos (CÓDIGO OMITIDO POR ESPAÇO)
+            // Copia Arquivos
+            foreach (var arquivo in Directory.GetFiles(origem))
+            {
+                string nomeArquivo = Path.GetFileName(arquivo);
+                string destinoArquivo = Path.Combine(destino, nomeArquivo);
 
-            // Copia Subpastas (CÓDIGO OMITIDO POR ESPAÇO)
+                Narrar($"   -> Copiando: {nomeArquivo}");
+
+                bool copiou = false;
+                for (int i = 1; i <= 5; i++) // 5 Tentativas
+                {
+                    try
+                    {
+                        File.Copy(arquivo, destinoArquivo, true);
+                        copiou = true;
+                        break;
+                    }
+                    catch (IOException ioEx)
+                    {
+                        Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
+                        // Aumente este tempo para 2 segundos para dar tempo do SO liberar o handle
+                        Thread.Sleep(2000);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        Narrar($"      [Tentativa {i}] Sem permissão! Tentando liberar acesso...");
+                        try { File.SetAttributes(destinoArquivo, FileAttributes.Normal); } catch { }
+                        Thread.Sleep(500);
+                    }
+                }
+
+                if (!copiou)
+                {
+                    Narrar($"      XXX FALHA CRÍTICA: Desisti de copiar {nomeArquivo} após 5 tentativas.");
+                    throw new Exception($"Falha ao copiar {nomeArquivo}");
+                }
+            }
+
+            // Copia Subpastas
+            foreach (var dir in Directory.GetDirectories(origem))
+            {
+                string nomeDir = new DirectoryInfo(dir).Name;
+                string destinoDir = Path.Combine(destino, nomeDir);
+                CopiarRecursivo(dir, destinoDir);
+            }
         }
 
         private static void ExecutarCorrecaoNome(string[] args) { Narrar("Executando correção de nome (dummy)..."); }
