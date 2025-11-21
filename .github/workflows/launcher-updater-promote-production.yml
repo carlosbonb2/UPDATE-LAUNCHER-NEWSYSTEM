@@ -1,0 +1,62 @@
+name: 3 - Promover LauncherUpdater para Produção (Atômico)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Tag da Release (ex: lu-v1.0.1)'
+        required: true
+
+jobs:
+  deploy-atomic:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      
+    steps:
+      - name: 1. Baixar e Organizar Release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          TAG="${{ github.event.inputs.version_tag }}"
+          # Extrai a versão real (ex: 1.0.1)
+          VER=$(echo "$TAG" | sed 's/lu-v//')
+          
+          echo "Preparando deploy atômico da versão $VER"
+          
+          # Cria estrutura temporária separada
+          mkdir -p "./deploy_payload" 
+          mkdir -p "./deploy_trigger"
+          
+          # Baixa arquivos da versão para a pasta de Payload
+          gh release download "$TAG" --pattern "launcherupdater_release.zip" --dir "./deploy_payload"
+          gh release download "$TAG" --pattern "LauncherUpdaterVersion.json" --dir "./deploy_payload"
+          
+          # Baixa o Master para a pasta de Gatilho
+          gh release download "$TAG" --pattern "LauncherUpdaterVersionMaster.json" --dir "./deploy_trigger"
+          
+          # Salva a versão em variável para usar no próximo passo
+          echo "VERSION_FOLDER=$VER" >> $GITHUB_ENV
+
+      # PASSO 2: Envia a Carga Útil (Pesada)
+      - name: 2. 📦 Enviar Arquivos da Versão (Seguro)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          # Envia o conteúdo da pasta Payload
+          local-dir: "./deploy_payload/"
+          # Cria a pasta da versão no servidor: /updates/LauncherUpdaterVersions/1.0.1/
+          server-dir: "${{ secrets.SFTP_PATH_PRODUCAO_LAUNCHER_UPDATER }}/${{ env.VERSION_FOLDER }}/"
+
+      # PASSO 3: Ativação (Rápida e Leve)
+      - name: 3. 🚀 Ativar Nova Versão (Atualizar Master)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          # Envia o conteúdo da pasta Trigger
+          local-dir: "./deploy_trigger/"
+          # Joga na Raiz: /updates/LauncherUpdaterVersions/
+          server-dir: "${{ secrets.SFTP_PATH_PRODUCAO_LAUNCHER_UPDATER }}/"
