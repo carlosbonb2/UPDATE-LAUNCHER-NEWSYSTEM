@@ -9,7 +9,7 @@ namespace LauncherUpdater
 {
     internal class Program
     {
-        const string NOME_ATALHO = "PDV NewSystem";
+        // const string NOME_ATALHO = "PDV NewSystem";
         const string NOME_UPDATER_TEMPORARIO = "LauncherUpdater.tmp"; // Nome temporário que devemos apagar
 
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
