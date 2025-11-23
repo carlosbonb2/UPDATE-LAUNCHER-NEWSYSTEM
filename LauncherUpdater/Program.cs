@@ -28,6 +28,13 @@ namespace LauncherUpdater
                 Narrar("O Updater acordou! Estou rodando em MODO VISÍVEL.");
                 Narrar($"Recebi {args.Length} argumentos: {string.Join(" ", args)}");
 
+                if (args.Contains("--test-io"))
+                {
+                    // Lógica de teste manual omitida, mas estaria aqui
+                    // ExecutarTesteIntegradoIO(args);
+                    return;
+                }
+
                 if (args.Length == 0) return;
 
                 if (args.Contains("--fix-mode"))
@@ -78,11 +85,14 @@ namespace LauncherUpdater
             Narrar($"PID do Pai (Launcher): {parentPid}");
             Narrar($"Pasta de Destino: {targetDir}");
 
+            // ... (Matar Processo Pai e Zumbis) ...
+
             Narrar("Procurando processos zumbis travando a pasta...");
             MatarProcessosNaPasta(targetDir);
 
+            // CORREÇÃO CRÍTICA DE TIMING: Espera 3 segundos para o SO liberar o handle do diretório
             Thread.Sleep(3000);
-            Narrar("Atraso de 1s concluído. Tentando acesso ao diretório.");
+            Narrar("Atraso de 3s concluído. Tentando acesso ao diretório.");
 
             // 2. Tentar fazer backup da pasta alvo (ROLLBACK START)
             try
@@ -104,7 +114,7 @@ namespace LauncherUpdater
             catch (Exception ex)
             {
                 Narrar($"ERRO CRÍTICO no Backup: {ex.Message}");
-                throw;
+                throw; // Se falhar no backup, não podemos prosseguir com segurança.
             }
 
             try
@@ -142,8 +152,8 @@ namespace LauncherUpdater
                 // **LÓGICA DE ROLLBACK:**
                 try
                 {
-                    if (Directory.Exists(targetDir)) Directory.Delete(targetDir, true);
-                    if (Directory.Exists(backupDir)) Directory.Move(backupDir, targetDir);
+                    if (Directory.Exists(targetDir)) Directory.Delete(targetDir, true); // Apaga a pasta com falha
+                    if (Directory.Exists(backupDir)) Directory.Move(backupDir, targetDir); // Restaura o backup
                     Narrar("ROLLBACK CONCLUÍDO. Versão antiga restaurada.");
                 }
                 catch (Exception rollbackEx)
@@ -284,7 +294,6 @@ namespace LauncherUpdater
                     catch (IOException ioEx)
                     {
                         Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
-                        // Mantém 2 segundos para dar tempo do SO liberar
                         Thread.Sleep(2000);
                     }
                     catch (UnauthorizedAccessException)
