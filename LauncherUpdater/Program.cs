@@ -15,7 +15,6 @@ namespace LauncherUpdater
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
         static string _exeNameSolicitado = "PDV_Launcher.exe";
         static string _caminhoZipDoLauncher = string.Empty;
-        private static object parentDir;
 
         static void Main(string[] args)
         {
@@ -76,10 +75,17 @@ namespace LauncherUpdater
 
             string backupDir = targetDir + "_BACKUP"; // Variável crucial para o rollback
 
-            Narrar($"PID do Pai (Launcher): {parentDir}");
+            Narrar($"PID do Pai (Launcher): {parentPid}");
             Narrar($"Pasta de Destino: {targetDir}");
 
-            // ... (Matar Processo Pai e Zumbis - Lógica Omitida) ...
+            // ... (Matar Processo Pai e Zumbis) ...
+
+            Narrar("Procurando processos zumbis travando a pasta...");
+            MatarProcessosNaPasta(targetDir);
+
+            // CORREÇÃO DE TIMING: Espera 1 segundo para o SO liberar o handle do diretório
+            Thread.Sleep(1000);
+            Narrar("Atraso de 1s concluído. Tentando acesso ao diretório.");
 
             // 2. Tentar fazer backup da pasta alvo (ROLLBACK START)
             try
@@ -90,7 +96,7 @@ namespace LauncherUpdater
                     if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
                     Directory.Move(targetDir, backupDir); // Renomeia \App para \App_BACKUP
                     Narrar($"Pasta de destino movida para backup: {backupDir}");
-                    Directory.CreateDirectory(targetDir); // Cria a nova pasta \App vazia
+                    Directory.CreateDirectory(targetDir); // Cria a nova pasta \App vazia para receber a atualização
                 }
                 else
                 {
@@ -118,7 +124,6 @@ namespace LauncherUpdater
 
                 if (File.Exists(caminhoExeFinal))
                 {
-                    // CORREÇÃO: Modo Visível
                     Process.Start(new ProcessStartInfo(caminhoExeFinal)
                     {
                         WorkingDirectory = targetDir,
@@ -282,6 +287,7 @@ namespace LauncherUpdater
                     catch (IOException ioEx)
                     {
                         Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
+                        // Mantém 2 segundos para dar tempo do SO liberar
                         Thread.Sleep(2000);
                     }
                     catch (UnauthorizedAccessException)
