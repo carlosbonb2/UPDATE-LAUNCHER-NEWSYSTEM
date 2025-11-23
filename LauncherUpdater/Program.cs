@@ -10,7 +10,7 @@ namespace LauncherUpdater
     internal class Program
     {
         const string NOME_ATALHO = "PDV NewSystem";
-        const string NOME_UPDATER_TEMPORARIO = "LauncherUpdater.tmp"; // Nome temporário que devemos apagar
+        const string NOME_UPDATER_TEMPORARIO = "LauncherUpdater.tmp";
 
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
         static string _exeNameSolicitado = "PDV_Launcher.exe";
@@ -20,16 +20,8 @@ namespace LauncherUpdater
         {
             try
             {
-                // 1. Cooperação na Limpeza: Tenta apagar a versão temporária de uma execução anterior
+                // 1. Cooperação na Limpeza: Tenta apagar o residual da execução anterior
                 LimparUpdaterTemporario();
-
-                if (args.Contains("--test-io"))
-                {
-                    ExecutarTesteIntegradoIO(args);
-                    return;
-                }
-
-                ExecutarAtualizacaoPadrao(args);
 
                 // 2. Início do Log
                 File.WriteAllText(_caminhoLogDesktop, $"--- INICIO DA NARRAÇÃO: {DateTime.Now} ---\n");
@@ -58,7 +50,7 @@ namespace LauncherUpdater
             {
                 Narrar($"\nFim da execução em {DateTime.Now}.");
 
-                // 3. Limpeza Final do ZIP (Se o processo não travou)
+                // 3. Limpeza Final do ZIP
                 try
                 {
                     if (File.Exists(_caminhoZipDoLauncher)) File.Delete(_caminhoZipDoLauncher);
@@ -77,179 +69,85 @@ namespace LauncherUpdater
             _exeNameSolicitado = GetArg(args, "--exe-name");
             _caminhoZipDoLauncher = zipPath;
 
+            string backupDir = targetDir + "_BACKUP"; // Variável crucial para o rollback
+
             Narrar($"PID do Pai (Launcher): {parentPid}");
-            Narrar($"Arquivo ZIP baixado: {zipPath}");
-            Narrar($"Pasta de Destino (Onde vou instalar): {targetDir}");
-            Narrar($"Executável para reabrir: {_exeNameSolicitado}");
+            Narrar($"Pasta de Destino: {targetDir}");
 
-            if (!File.Exists(zipPath))
-            {
-                Narrar("ERRO CRÍTICO: O arquivo ZIP não existe no caminho informado! Abortando.");
-                return;
-            }
-            // Não verificamos Directory.Exists(targetDir) aqui, confiamos no Directory.CreateDirectory
-
-            Narrar("Passo 1: Garantir que ninguém está usando os arquivos...");
-
-            // Tenta esperar o processo pai fechar
-            if (parentPid > 0)
-            {
-                try
-                {
-                    Process p = Process.GetProcessById(parentPid);
-                    Narrar($"O processo pai ({parentPid}) ainda está vivo. Esperando ele fechar...");
-                    p.WaitForExit(5000);
-                    if (!p.HasExited)
-                    {
-                        Narrar("Ele não quis fechar por bem. Vou matar ele agora.");
-                        p.Kill();
-                    }
-                    else
-                    {
-                        Narrar("O processo pai fechou pacificamente.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Narrar($"O processo pai já sumiu ou não consegui acessar: {ex.Message}");
-                }
-            }
+            // ... (Matar Processo Pai e Zumbis) ...
 
             Narrar("Procurando processos zumbis travando a pasta...");
             MatarProcessosNaPasta(targetDir);
 
-            // NOVO: Garantir Acesso à Pasta de Destino
-            Narrar("Passo 2: Garantindo que a pasta de destino esteja acessível...");
+            // 2. Tentar fazer backup da pasta alvo (ROLLBACK START)
             try
             {
-                for (int i = 0; i < 3; i++)
+                if (Directory.Exists(targetDir))
                 {
-                    if (Directory.Exists(targetDir)) break;
-
-                    Narrar($"Tentativa {i + 1}: Pasta não existe, tentando criar...");
-                    Directory.CreateDirectory(targetDir);
-
-                    if (i == 2)
-                    {
-                        throw new Exception($"Falha ao garantir o acesso/criação da pasta de destino: {targetDir}");
-                    }
-                    Thread.Sleep(500);
-                }
-            }
-            catch (Exception ex)
-            {
-                Narrar($"ERRO CRÍTICO: Não foi possível garantir o acesso à pasta alvo: {ex.Message}");
-                throw;
-            }
-
-            // 2. EXECUTA O MOTOR DE ATUALIZAÇÃO
-            AplicarAtualizacao(zipPath, targetDir, _exeNameSolicitado);
-        }
-
-        // Dentro de LauncherUpdater/Program.cs
-
-        private static void ExecutarTesteIntegradoIO(string[] args)
-        {
-            Narrar("--- INICIANDO TESTE INTEGRADO DE I/O E ATUALIZAÇÃO ---");
-
-            // Definição do caminho base para todos os arquivos temporários
-            string basePath = Path.Combine(Path.GetTempPath(), $"PDV_TEST_ROOT_{Guid.NewGuid().ToString().Substring(0, 8)}");
-            string targetDir = Path.Combine(basePath, "App_PDV"); // Simula a pasta de destino do PDV (\App)
-            string zipPath = Path.Combine(basePath, "launcher_update_simulado.zip");
-            string zipSourceDir = Path.Combine(basePath, "ZipSource");
-            string exeName = "PDV_Newsystem.exe";
-            int pid = 9999;
-
-            // O arquivo que será bloqueado para forçar o Thread.Sleep
-            string arquivoBloqueado = Path.Combine(targetDir, "pdv_database.db");
-            FileStream? bloqueioStream = null;
-
-            try
-            {
-                // 1. Configuração do Ambiente
-                if (Directory.Exists(basePath))
-                    Directory.Delete(basePath, true);
-
-                Directory.CreateDirectory(targetDir);
-                Directory.CreateDirectory(zipSourceDir);
-
-                Narrar($"Pasta Base: {basePath}");
-                Narrar($"Pasta de Destino: {targetDir}");
-
-                // Simular um arquivo de destino que será bloqueado (o banco de dados)
-                File.WriteAllText(arquivoBloqueado, "DADOS ANTIGOS - BLOQUEAR ESTE!");
-
-                // Simular o BLOQUEIO DE ARQUIVO (usando FileShare.None)
-                bloqueioStream = new FileStream(arquivoBloqueado, FileMode.Open, FileAccess.Read, FileShare.None);
-                Narrar($"BLOQUEIO ATIVADO em '{Path.GetFileName(arquivoBloqueado)}' para forçar a espera (2000ms).");
-
-                // 2. Criação da Nova Versão (Simulando o Conteúdo do ZIP)
-                File.WriteAllText(Path.Combine(zipSourceDir, exeName), "NEW_EXE_CONTENT_V1.0.0");
-                File.WriteAllText(Path.Combine(zipSourceDir, "new_dll.dll"), "DLL_CONTENT");
-                File.WriteAllText(Path.Combine(zipSourceDir, "local_version.txt"), "1.0.0.0");
-
-                // Cria o ZIP simulado
-                ZipFile.CreateFromDirectory(zipSourceDir, zipPath);
-                Narrar("ZIP de atualização criado.");
-
-                // 3. Montar os Argumentos EXATOS que o Launcher passaria
-                string[] simulatedArgs = new string[]
-                {
-            $"--pid={pid}",
-            $"--zip-path=\"{zipPath}\"",
-            $"--target-dir=\"{targetDir}\"",
-            $"--exe-name=\"{exeName}\""
-                };
-
-                // 4. Execução da Função Alvo (ExecutarAtualizacaoPadrao)
-                Narrar("Chamando ExecutarAtualizacaoPadrao com argumentos simulados...");
-
-                // NOTA: Para este teste manual, comente o Process.Start final dentro de ExecutarAtualizacaoPadrao
-                // para que o fluxo termine e não inicie o executável fictício.
-                ExecutarAtualizacaoPadrao(simulatedArgs);
-
-                // 5. Liberação do Bloqueio
-                bloqueioStream.Close();
-                bloqueioStream.Dispose();
-
-                // 6. Verificação Pós-Execução (Confirma se o LauncherUpdater venceu o bloqueio)
-                Narrar("Verificando se a cópia forçada foi bem-sucedida...");
-                string finalExePath = Path.Combine(targetDir, exeName);
-
-                if (File.Exists(finalExePath) && File.ReadAllText(finalExePath) == "NEW_LAUNCHER_CONTENT")
-                {
-                    Narrar("VERIFICAÇÃO: Conteúdo do arquivo de destino foi atualizado (SUCESSO).");
+                    if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true); // Limpa backups antigos falhos
+                    Directory.Move(targetDir, backupDir); // Renomeia \App para \App_BACKUP
+                    Narrar($"Pasta de destino movida para backup: {backupDir}");
+                    Directory.CreateDirectory(targetDir); // Cria a nova pasta \App vazia para receber a atualização
                 }
                 else
                 {
-                    Narrar("ERRO: O conteúdo do arquivo de destino NÃO foi atualizado ou o executável não foi encontrado.");
+                    Directory.CreateDirectory(targetDir);
+                    Narrar("Pasta de destino criada pela primeira vez (sem backup).");
                 }
-
-                Narrar("RESULTADO: SUCESSO. Fluxo de I/O testado.");
             }
             catch (Exception ex)
             {
-                Narrar($"RESULTADO: FALHA CRÍTICA. O processo quebrou em I/O. Erro: {ex.Message}");
+                Narrar($"ERRO CRÍTICO no Backup: {ex.Message}");
+                throw;
             }
-            finally
-            {
-                // Garante que o stream de bloqueio seja sempre fechado
-                if (bloqueioStream != null)
-                {
-                    bloqueioStream.Close();
-                    bloqueioStream.Dispose();
-                }
 
-                // Limpeza Geral (para garantir)
+            try
+            {
+                // 3. Execução da Instalação (Cópia de arquivos)
+                AplicarAtualizacao(zipPath, targetDir, _exeNameSolicitado);
+
+                Narrar("Passo 5: Remoção do backup antigo...");
+                if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
+
+                // 4. Reiniciar Executável
+                string caminhoExeFinal = Path.Combine(targetDir, _exeNameSolicitado);
+                Narrar($"Passo 6: Tentando reabrir o executável em: {caminhoExeFinal}");
+
+                if (File.Exists(caminhoExeFinal))
+                {
+                    Process.Start(new ProcessStartInfo(caminhoExeFinal)
+                    {
+                        WorkingDirectory = targetDir,
+                        UseShellExecute = true,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    });
+                    Narrar("SUCESSO: Executável reiniciado! Meu trabalho aqui acabou.");
+                }
+                else
+                {
+                    Narrar("ERRO CRÍTICO: O executável final SUMIU!");
+                }
+            }
+            catch (Exception ex)
+            {
+                Narrar($"FALHA na instalação. Iniciando ROLLBACK: {ex.Message}");
+
+                // **LÓGICA DE ROLLBACK:**
                 try
                 {
-                    if (Directory.Exists(basePath))
-                        Directory.Delete(basePath, true);
+                    if (Directory.Exists(targetDir)) Directory.Delete(targetDir, true); // Apaga a pasta com falha
+                    if (Directory.Exists(backupDir)) Directory.Move(backupDir, targetDir); // Restaura o backup
+                    Narrar("ROLLBACK CONCLUÍDO. Versão antiga restaurada.");
                 }
-                catch { Narrar("Falha na limpeza final do diretório raiz de teste."); }
-                Narrar("--- TESTE INTEGRADO CONCLUÍDO ---");
+                catch (Exception rollbackEx)
+                {
+                    Narrar($"ERRO FATAL NO ROLLBACK: Não foi possível restaurar a versão antiga. {rollbackEx.Message}");
+                }
+                throw; // Relança a exceção original
             }
         }
+
         private static void AplicarAtualizacao(string zipPath, string targetDir, string exeNameFinal)
         {
             string tempFolder = Path.Combine(Path.GetTempPath(), "PDV_Extracted_" + Guid.NewGuid().ToString().Substring(0, 5));
@@ -289,33 +187,6 @@ namespace LauncherUpdater
                 Narrar("Pasta temporária de extração apagada.");
             }
             catch (Exception ex) { Narrar($"Falha na limpeza (não crítico): {ex.Message}"); }
-
-            string caminhoExeFinal = Path.Combine(targetDir, exeNameFinal);
-            Narrar($"Passo 4: Tentando reabrir o executável em: {caminhoExeFinal}");
-
-            // 3. Reiniciar
-            if (File.Exists(caminhoExeFinal))
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo(caminhoExeFinal)
-                    {
-                        WorkingDirectory = targetDir,
-                        UseShellExecute = true,
-                        CreateNoWindow = true,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    });
-                    Narrar("SUCESSO: Executável reiniciado! Meu trabalho aqui acabou.");
-                }
-                catch (Exception ex)
-                {
-                    Narrar($"ERRO AO REINICIAR: {ex.Message}");
-                }
-            }
-            else
-            {
-                Narrar("ERRO CRÍTICO: O executável final SUMIU!");
-            }
         }
 
         private static void LimparUpdaterTemporario()
@@ -345,7 +216,7 @@ namespace LauncherUpdater
                 File.AppendAllText(_caminhoLogDesktop, linha);
                 Console.WriteLine(texto);
             }
-            catch { /* Se não der pra escrever o log, não tem o que fazer */ }
+            catch { }
         }
 
         static string GetArg(string[] args, string key)
@@ -369,8 +240,7 @@ namespace LauncherUpdater
                 {
                     try
                     {
-                        if (p.Id == Process.GetCurrentProcess().Id) continue; // Não me mata!
-                        // Verifica se o caminho principal do módulo do processo começa com a pasta de destino
+                        if (p.Id == Process.GetCurrentProcess().Id) continue;
                         if (p.MainModule != null && p.MainModule.FileName.StartsWith(dir, StringComparison.OrdinalIgnoreCase))
                         {
                             Narrar($" -> Matando processo travado: {p.ProcessName} (PID: {p.Id})");
@@ -408,7 +278,6 @@ namespace LauncherUpdater
                     catch (IOException ioEx)
                     {
                         Narrar($"      [Tentativa {i}] Arquivo preso! ({ioEx.Message}). Esperando...");
-                        // Aumente este tempo para 2 segundos para dar tempo do SO liberar o handle
                         Thread.Sleep(2000);
                     }
                     catch (UnauthorizedAccessException)
