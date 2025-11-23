@@ -15,6 +15,7 @@ namespace LauncherUpdater
         static string _caminhoLogDesktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "RELATORIO_UPDATER.txt");
         static string _exeNameSolicitado = "PDV_Launcher.exe";
         static string _caminhoZipDoLauncher = string.Empty;
+        private static object parentDir;
 
         static void Main(string[] args)
         {
@@ -25,7 +26,7 @@ namespace LauncherUpdater
 
                 // 2. Início do Log
                 File.WriteAllText(_caminhoLogDesktop, $"--- INICIO DA NARRAÇÃO: {DateTime.Now} ---\n");
-                Narrar("O Updater acordou! Estou rodando.");
+                Narrar("O Updater acordou! Estou rodando em MODO VISÍVEL.");
                 Narrar($"Recebi {args.Length} argumentos: {string.Join(" ", args)}");
 
                 if (args.Length == 0) return;
@@ -41,10 +42,14 @@ namespace LauncherUpdater
             }
             catch (Exception ex)
             {
+                // MODO DEBUG: Força a exibição do erro e pausa o console
                 Narrar("\n------------------------------------------------");
-                Narrar("!!! ERRO CATASTRÓFICO NÃO TRATADO !!!");
+                Narrar("!!! ERRO CRÍTICO NÃO TRATADO !!!");
                 Narrar(ex.ToString());
                 Narrar("------------------------------------------------");
+
+                Console.WriteLine("\n[FALHA NA INSTALAÇÃO] Revise o log acima e no Desktop. Pressione qualquer tecla para sair...");
+                Console.ReadKey();
             }
             finally
             {
@@ -71,23 +76,21 @@ namespace LauncherUpdater
 
             string backupDir = targetDir + "_BACKUP"; // Variável crucial para o rollback
 
-            Narrar($"PID do Pai (Launcher): {parentPid}");
+            Narrar($"PID do Pai (Launcher): {parentDir}");
             Narrar($"Pasta de Destino: {targetDir}");
 
-            // ... (Matar Processo Pai e Zumbis) ...
-
-            Narrar("Procurando processos zumbis travando a pasta...");
-            MatarProcessosNaPasta(targetDir);
+            // ... (Matar Processo Pai e Zumbis - Lógica Omitida) ...
 
             // 2. Tentar fazer backup da pasta alvo (ROLLBACK START)
             try
             {
                 if (Directory.Exists(targetDir))
                 {
-                    if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true); // Limpa backups antigos falhos
+                    Narrar("Tentando backup da versão antiga...");
+                    if (Directory.Exists(backupDir)) Directory.Delete(backupDir, true);
                     Directory.Move(targetDir, backupDir); // Renomeia \App para \App_BACKUP
                     Narrar($"Pasta de destino movida para backup: {backupDir}");
-                    Directory.CreateDirectory(targetDir); // Cria a nova pasta \App vazia para receber a atualização
+                    Directory.CreateDirectory(targetDir); // Cria a nova pasta \App vazia
                 }
                 else
                 {
@@ -115,12 +118,13 @@ namespace LauncherUpdater
 
                 if (File.Exists(caminhoExeFinal))
                 {
+                    // CORREÇÃO: Modo Visível
                     Process.Start(new ProcessStartInfo(caminhoExeFinal)
                     {
                         WorkingDirectory = targetDir,
                         UseShellExecute = true,
-                        CreateNoWindow = true,
-                        WindowStyle = ProcessWindowStyle.Hidden
+                        CreateNoWindow = false,
+                        WindowStyle = ProcessWindowStyle.Normal
                     });
                     Narrar("SUCESSO: Executável reiniciado! Meu trabalho aqui acabou.");
                 }
@@ -136,8 +140,8 @@ namespace LauncherUpdater
                 // **LÓGICA DE ROLLBACK:**
                 try
                 {
-                    if (Directory.Exists(targetDir)) Directory.Delete(targetDir, true); // Apaga a pasta com falha
-                    if (Directory.Exists(backupDir)) Directory.Move(backupDir, targetDir); // Restaura o backup
+                    if (Directory.Exists(targetDir)) Directory.Delete(targetDir, true);
+                    if (Directory.Exists(backupDir)) Directory.Move(backupDir, targetDir);
                     Narrar("ROLLBACK CONCLUÍDO. Versão antiga restaurada.");
                 }
                 catch (Exception rollbackEx)
