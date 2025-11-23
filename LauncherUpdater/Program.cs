@@ -78,13 +78,10 @@ namespace LauncherUpdater
             Narrar($"PID do Pai (Launcher): {parentPid}");
             Narrar($"Pasta de Destino: {targetDir}");
 
-            // ... (Matar Processo Pai e Zumbis) ...
-
             Narrar("Procurando processos zumbis travando a pasta...");
             MatarProcessosNaPasta(targetDir);
 
-            // CORREÇÃO DE TIMING: Espera 1 segundo para o SO liberar o handle do diretório
-            Thread.Sleep(1000);
+            Thread.Sleep(3000);
             Narrar("Atraso de 1s concluído. Tentando acesso ao diretório.");
 
             // 2. Tentar fazer backup da pasta alvo (ROLLBACK START)
