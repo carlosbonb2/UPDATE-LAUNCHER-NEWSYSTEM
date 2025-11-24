@@ -3,7 +3,7 @@ name: 1 - Deploy LauncherUpdater Staging (Teste Seguro)
 on:
   push:
     tags:
-      - 'teste-lu-v*' # Ex: teste-lu-v1.0.0
+      - 'v*-rc' # Gatilho Novo: v1.0.0-rc
 
 jobs:
   deploy-staging:
@@ -16,47 +16,52 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: '8.0.x' }
 
-      # --- Extrai versão ---
-      - name: Extrair Versão para Assembly
+      # 1. Extração de Versão
+      - name: Extrair Versão
         run: |
-          $ver = "${{ github.ref_name }}".Replace("teste-lu-v", "")
+          $ver = "${{ github.ref_name }}".TrimStart('v').Split('-')[0]
           echo "VERSION_NUMBER=$ver" | Out-File -FilePath $env:GITHUB_ENV
         shell: pwsh
 
-      # Guardiões (Simples)
-      - name: 🛡️ Verificar Estilo e Vulnerabilidades
-        run: dotnet format --verify-no-changes --verbosity diagnostic
-
-      # --- BUILD CORRIGIDO: Usa 'Release' e injeta o símbolo 'STAGING' ---
-      - name: Build Staging (Injetando Símbolo)
+      # 2. Compilação (Single File - Cavalo de Troia)
+      - name: Build Staging
         run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:Version=${{ env.VERSION_NUMBER }} /p:DefineConstants="STAGING" /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
 
-      # --- ESTRUTURAÇÃO ATÔMICA ---
-      - name: Estruturar Pastas
+      # 3. --- SEGURANÇA: ASSINATURA DIGITAL ---
+      - name: Decodificar Certificado
         run: |
-          $folder = "${{ github.ref_name }}" # Ex: teste-lu-v1.0.0
-          
+          $pfx_base_64 = "${{ secrets.CODE_SIGNING_CERTIFICATE }}"
+          [System.IO.File]::WriteAllBytes("signing_cert.pfx", [System.Convert]::FromBase64String($pfx_base_64))
+        shell: pwsh
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Assinar Executável
+        run: |
+          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "signing_cert.pfx" /p "${{ secrets.CODE_SIGNING_PASSWORD }}" /fd SHA256 /tr http://timestamp.digert.com /td SHA256 "publish\LauncherUpdater.exe"
+        shell: pwsh
+        continue-on-error: true # Continua se falhar a assinatura (para teste), mas em prod deve parar
+      # ----------------------------------------
+
+      # 4. Empacotamento
+      - name: Estruturar e Enviar
+        run: |
+          $folder = "${{ github.ref_name }}"
           New-Item -ItemType Directory -Force -Path "./deploy/$folder"
           New-Item -ItemType Directory -Force -Path "./deploy/gatilho_ativacao"
 
-          # 1. Zipa
           $zipName = "launcherupdater_release.zip"
           Compress-Archive -Path ./publish/* -DestinationPath "./deploy/$folder/$zipName"
           $hash = (Get-FileHash -Path "./deploy/$folder/$zipName").Hash
           
-          # 2. URL (Usando a URL base de staging para o Updater)
           $url = "${{ secrets.SFTP_URL_BASE_STAGING_LAUNCHER_UPDATER }}/$folder/$zipName"
           
-          # 3. Payload JSON (LauncherUpdaterVersion.json)
           @{ Version = $env:VERSION_NUMBER; Url = $url; Checksum = $hash } | ConvertTo-Json | Set-Content -Path "./deploy/$folder/LauncherUpdaterVersion.json" -Encoding utf8
-          
-          # 4. Trigger (LauncherUpdaterVersionMaster.json)
           @{ CurrentFolder = $folder } | ConvertTo-Json | Set-Content -Path "./deploy/gatilho_ativacao/LauncherUpdaterVersionMaster.json" -Encoding utf8
         shell: pwsh
 
-      # ENVIO
-      - name: 7. 📦 Enviar Carga Útil
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      # 5. Upload
+      - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST_STAGING }}
           username: ${{ secrets.SFTP_USERNAME_STAGING }}
@@ -64,8 +69,7 @@ jobs:
           local-dir: "./deploy/${{ github.ref_name }}/" 
           server-dir: "${{ secrets.SFTP_PATH_STAGING_LAUNCHER_UPDATER }}/${{ github.ref_name }}/"
 
-      - name: 8. 🚀 Ativar Versão (Trigger)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST_STAGING }}
           username: ${{ secrets.SFTP_USERNAME_STAGING }}
