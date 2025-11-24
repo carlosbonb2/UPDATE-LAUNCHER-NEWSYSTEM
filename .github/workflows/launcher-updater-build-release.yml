@@ -19,6 +19,7 @@ jobs:
         
       - name: Extrair Versão
         run: |
+          # CORREÇÃO DE VERSÃO: Remove o 'v' para não quebrar o .NET
           $tag = "${{ github.ref_name }}"
           $ver = $tag.TrimStart('v')
           echo "VERSION_NUMBER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -26,18 +27,30 @@ jobs:
 
       - run: dotnet format --verify-no-changes --verbosity diagnostic
         
-      # BUILD SINGLE FILE (CRUCIAL PARA O RESGATE)
+      # BUILD SINGLE FILE
       - name: Construir
         run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:TreatWarningsAsErrors=true /p:Version=${{ env.VERSION_NUMBER }} /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
       
-      # --- ASSINATURA ---
-      - name: Assinar Executável
+      # --- ASSINATURA TOLERANTE A FALHAS ---
+      - name: Assinar Executável (Opcional)
         run: |
-          $pfx_base_64 = "${{ secrets.CODE_SIGNING_CERTIFICATE }}"
-          [System.IO.File]::WriteAllBytes("signing_cert.pfx", [System.Convert]::FromBase64String($pfx_base_64))
-          & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "signing_cert.pfx" /p "${{ secrets.CODE_SIGNING_PASSWORD }}" /fd SHA256 /tr http://timestamp.digert.com /td SHA256 "publish\LauncherUpdater.exe"
+          $pfx = "${{ secrets.CODE_SIGNING_CERTIFICATE }}"
+          if ([string]::IsNullOrWhiteSpace($pfx)) {
+              Write-Host "⚠️ NENHUM CERTIFICADO ENCONTRADO. Pulando assinatura."
+              return
+          }
+
+          try {
+              [System.IO.File]::WriteAllBytes("signing_cert.pfx", [System.Convert]::FromBase64String($pfx))
+              & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "signing_cert.pfx" /p "${{ secrets.CODE_SIGNING_PASSWORD }}" /fd SHA256 /tr http://timestamp.digert.com /td SHA256 "publish\LauncherUpdater.exe"
+              Write-Host "✅ Assinatura concluída com sucesso."
+          }
+          catch {
+              Write-Host "⚠️ FALHA NA ASSINATURA: $_"
+              Write-Host "➡️ O fluxo continuará sem assinatura (Software não assinado)."
+          }
         shell: pwsh
-      # ------------------
+      # -------------------------------------
         
       - name: Estruturar Pacote Release
         run: |
@@ -52,7 +65,7 @@ jobs:
           Compress-Archive -Path ./publish/* -DestinationPath "./release_pack/$folder/$zipName"
           $hash = (Get-FileHash -Path "./release_pack/$folder/$zipName").Hash
 
-          # JSON (Aponta para URL de Produção)
+          # JSON
           $urlBase = "${{ secrets.SFTP_URL_BASE_LAUNCHER_UPDATER }}"
           @{ Version = $verNum; Url = "$urlBase/$folder/$zipName"; Checksum = $hash } | ConvertTo-Json | Set-Content "./release_pack/$folder/LauncherUpdaterVersion.json"
 
