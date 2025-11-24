@@ -85,6 +85,9 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          draft: false     
+          prerelease: false 
+          make_latest: true 
           files: |
             ./release_trigger/LauncherUpdaterVersionMaster.json
             ./release_pack/${{ env.VERSION_NUMBER }}/*
