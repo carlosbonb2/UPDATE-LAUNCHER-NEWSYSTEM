@@ -157,12 +157,12 @@ namespace LauncherUpdater
             }
         }
 
-        // --- NOVO MÉTODO: Resgata arquivos vitais da pasta de backup ---
         private static void RestaurarDadosUsuario(string pastaBackup, string pastaDestino)
         {
             try
             {
-                string[] arquivosParaSalvar = { "pdv_database.db", "config.ini", "local_version.txt" };
+
+                string[] arquivosParaSalvar = { "pdv_database.db", "config.ini" };
 
                 foreach (var arquivo in arquivosParaSalvar)
                 {
@@ -176,12 +176,11 @@ namespace LauncherUpdater
                     }
                 }
 
-                // Opcional: Se tiver pasta de logs ou imagens, restaurar aqui também
+                // Mantém a restauração da pasta de backups históricos
                 string pastaBackupsAntigos = Path.Combine(pastaBackup, "Backups");
                 string pastaBackupsNova = Path.Combine(pastaDestino, "Backups");
                 if (Directory.Exists(pastaBackupsAntigos))
                 {
-                    // Mover a pasta de backups antiga para a nova instalação
                     if (!Directory.Exists(pastaBackupsNova))
                         Directory.Move(pastaBackupsAntigos, pastaBackupsNova);
                     Narrar("   -> Pasta de Backups históricos restaurada.");
@@ -190,7 +189,6 @@ namespace LauncherUpdater
             catch (Exception ex)
             {
                 Narrar($"AVISO: Erro ao restaurar dados do usuário: {ex.Message}");
-                // Não damos throw aqui para não abortar a atualização por um erro de cópia de arquivo não vital
             }
         }
 
