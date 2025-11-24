@@ -10,21 +10,24 @@ on:
 jobs:
   deploy-atomic:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      
     steps:
       - name: Baixar Release
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
           TAG="${{ github.event.inputs.version_tag }}"
-          # Remove 'v' do início (v1.0.0 -> 1.0.0)
           VER=$(echo "$TAG" | sed 's/^v//')
           echo "VERSION_FOLDER=$VER" >> $GITHUB_ENV
           
           mkdir -p "./deploy_payload" "./deploy_trigger"
-          gh release download "$TAG" --pattern "launcherupdater_release.zip" --dir "./deploy_payload"
-          gh release download "$TAG" --pattern "LauncherUpdaterVersion.json" --dir "./deploy_payload"
-          gh release download "$TAG" --pattern "LauncherUpdaterVersionMaster.json" --dir "./deploy_trigger"
+          
+          # CORREÇÃO: Adicionado --repo ${{ github.repository }} para ele saber onde buscar
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "launcherupdater_release.zip" --dir "./deploy_payload"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersion.json" --dir "./deploy_payload"
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersionMaster.json" --dir "./deploy_trigger"
 
-      # Envia para pasta PRODUÇÃO
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST }}
