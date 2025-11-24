@@ -19,9 +19,9 @@ jobs:
         
       - name: Extrair Versão
         run: |
-          # Remove o 'v' inicial -> 1.0.0
-          $ver = "${{ github.ref_name }}".TrimStart('v')
-          echo "VERSION_NUMBER=$ver" | Out-File -FilePath $env:GITHUB_ENV
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          echo "VERSION_NUMBER=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
         shell: pwsh
 
       - run: dotnet format --verify-no-changes --verbosity diagnostic
