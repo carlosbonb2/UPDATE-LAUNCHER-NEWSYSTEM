@@ -26,32 +26,41 @@ jobs:
 
       - run: dotnet format --verify-no-changes --verbosity diagnostic
         
-      # BUILD SINGLE FILE (Obrigatório para o Updater funcionar no Launcher antigo)
+      # BUILD SINGLE FILE (Obrigatório)
       - name: Construir
         run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:TreatWarningsAsErrors=true /p:Version=${{ env.VERSION_NUMBER }} /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
       
-      # --- ASSINATURA OPCIONAL ---
-      - name: Assinar Executável (Tolerante a Falhas)
-        run: |
-          $pfx = "${{ secrets.CODE_SIGNING_CERTIFICATE }}"
-          if ([string]::IsNullOrWhiteSpace($pfx)) {
-              Write-Host "⚠️ NENHUM CERTIFICADO. Pulando assinatura."
-              return
-          }
-
-          try {
-              [System.IO.File]::WriteAllBytes("signing_cert.pfx", [System.Convert]::FromBase64String($pfx))
-              & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "signing_cert.pfx" /p "${{ secrets.CODE_SIGNING_PASSWORD }}" /fd SHA256 /tr http://timestamp.digert.com /td SHA256 "publish\LauncherUpdater.exe"
-              
-              if ($LASTEXITCODE -ne 0) { throw "SignTool falhou." }
-              Write-Host "✅ Assinatura concluída."
-          }
-          catch {
-              Write-Host "⚠️ AVISO: Falha na assinatura. O build continuará NÃO ASSINADO."
-              Write-Host "Erro: $_"
-          }
-        shell: pwsh
-      # ---------------------------
+      # --- ASSINATURA (BLINDADA PARA NÃO FALHAR O BUILD) ---
+      #- name: Assinar Executável (Totalmente Opcional)
+      #  run: |
+      #    $pfx = "${{ secrets.CODE_SIGNING_CERTIFICATE }}"
+      #    if ([string]::IsNullOrWhiteSpace($pfx)) {
+      #        Write-Host "⚠️ NENHUM CERTIFICADO. Pulando..."
+      #        return
+      #    }
+      #
+      #    try {
+      #        [System.IO.File]::WriteAllBytes("signing_cert.pfx", [System.Convert]::FromBase64String($pfx))
+      #        
+      #        # Executa o Signtool sem travar o script se der erro
+      #        & "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /f "signing_cert.pfx" /p "${{ secrets.CODE_SIGNING_PASSWORD }}" /fd SHA256 /tr http://timestamp.digert.com /td SHA256 "publish\LauncherUpdater.exe"
+      #        
+      #        # Verifica o resultado manualmente
+      #        if ($LASTEXITCODE -ne 0) {
+      #            Write-Host "⚠️ AVISO: A assinatura falhou (Senha incorreta ou erro técnico)."
+      #            Write-Host "➡️ O build continuará SEM assinatura."
+      #            # O SEGREDINHO: Força o sucesso para o GitHub não cancelar o deploy
+      #            $global:LastExitCode = 0 
+      #        } else {
+      #            Write-Host "✅ Assinatura concluída com sucesso."
+      #        }
+      #    }
+      #    catch {
+      #        Write-Host "⚠️ ERRO GERAL NA ASSINATURA: $_"
+      #        $global:LastExitCode = 0
+      #    }
+      #  shell: pwsh
+      # -----------------------------------------------------
         
       - name: Estruturar Pacote Release
         run: |
