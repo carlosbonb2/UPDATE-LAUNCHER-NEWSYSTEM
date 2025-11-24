@@ -33,7 +33,7 @@ jobs:
           dotnet list "LauncherUpdater/LauncherUpdater.csproj" package --vulnerable --include-transitive
         
       - name: 2. Construir e Publicar
-        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:TreatWarningsAsErrors=true /p:Version=${{ env.VERSION_NUMBER }}
+        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:TreatWarningsAsErrors=true /p:Version=${{ env.VERSION_NUMBER }} /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
       
       # --- Assinatura (Usando o bloco existente) ---
       - name: 3. Decodificar Certificado

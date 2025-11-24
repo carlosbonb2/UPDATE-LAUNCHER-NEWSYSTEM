@@ -29,8 +29,8 @@ jobs:
 
       # --- BUILD CORRIGIDO: Usa 'Release' e injeta o símbolo 'STAGING' ---
       - name: Build Staging (Injetando Símbolo)
-        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:Version=${{ env.VERSION_NUMBER }} /p:DefineConstants="STAGING"
-        #                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ CORREÇÃO AQUI
+        run: dotnet publish "LauncherUpdater/LauncherUpdater.csproj" --configuration Release --self-contained true -r win-x64 --output ./publish /p:Version=${{ env.VERSION_NUMBER }} /p:DefineConstants="STAGING" /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true
+
       # --- ESTRUTURAÇÃO ATÔMICA ---
       - name: Estruturar Pastas
         run: |
