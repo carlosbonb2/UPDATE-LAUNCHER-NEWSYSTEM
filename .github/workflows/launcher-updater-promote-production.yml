@@ -23,19 +23,22 @@ jobs:
           
           mkdir -p "./deploy_payload" "./deploy_trigger"
           
-          # CORREÇÃO: Adicionado --repo ${{ github.repository }} para ele saber onde buscar
+          # CORREÇÃO: --repo para achar o repositório sem checkout
           gh release download "$TAG" --repo "${{ github.repository }}" --pattern "launcherupdater_release.zip" --dir "./deploy_payload"
           gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersion.json" --dir "./deploy_payload"
           gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersionMaster.json" --dir "./deploy_trigger"
 
+      # Envia para a pasta da VERSÃO (Cria a pasta v1.0.0)
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST }}
           username: ${{ secrets.SFTP_USERNAME }}
           password: ${{ secrets.SFTP_PASSWORD }}
           local-dir: "./deploy_payload/"
-          server-dir: "${{ secrets.SFTP_PATH_PRODUCAO_LAUNCHER_UPDATER }}/v${{ env.VERSION_FOLDER }}/"
+          # O segredo deve apontar para .../LauncherUpdaterVersions
+          server-dir: "${{ secrets.SFTP_PATH_PRODUCAO_LAUNCHER_UPDATER }}/${{ github.event.inputs.version_tag }}/"
 
+      # Envia o Master para a RAIZ
       - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST }}
