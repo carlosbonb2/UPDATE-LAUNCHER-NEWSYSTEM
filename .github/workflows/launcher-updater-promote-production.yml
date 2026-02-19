@@ -4,42 +4,63 @@ on:
   workflow_dispatch:
     inputs:
       version_tag:
-        description: 'Tag da Release (ex: v1.0.0)'
+        description: 'Tag da Release Oficial gerada no Passo 2 (ex: v1.0.0)'
         required: true
+      confirmacao:
+        description: 'Trava de Segurança: Digite PROMOVER para enviar ao cliente'
+        required: true
+        default: 'NÃO'
 
 jobs:
   deploy-atomic:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: read
       
     steps:
-      - name: Baixar Release
+      # --- 1. TRAVA DE SEGURANÇA HUMANA ---
+      - name: 🔒 Verificar Confirmação
+        run: |
+          if ("${{ github.event.inputs.confirmacao }}" -ne "PROMOVER") {
+              Write-Error "❌ PROMOÇÃO CANCELADA: A palavra de segurança não foi digitada corretamente."
+              exit 1
+          }
+          Write-Host "✅ Segurança validada. Iniciando promoção..."
+        shell: pwsh
+
+      # --- 2. DOWNLOAD DOS ARTEFATOS DA RELEASE ---
+      - name: 📦 Baixar Release
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          TAG="${{ github.event.inputs.version_tag }}"
-          VER=$(echo "$TAG" | sed 's/^v//')
-          echo "VERSION_FOLDER=$VER" >> $GITHUB_ENV
+          $TAG = "${{ github.event.inputs.version_tag }}"
+          $VER = $TAG -replace '^v',''
+          echo "VERSION_FOLDER=$VER" | Out-File -FilePath $env:GITHUB_ENV -Append
           
-          mkdir -p "./deploy_payload" "./deploy_trigger"
+          New-Item -ItemType Directory -Force -Path "./deploy_payload"
+          New-Item -ItemType Directory -Force -Path "./deploy_trigger"
           
-          # CORREÇÃO: --repo para achar o repositório sem checkout
-          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "launcherupdater_release.zip" --dir "./deploy_payload"
-          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersion.json" --dir "./deploy_payload"
-          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersionMaster.json" --dir "./deploy_trigger"
+          try {
+              gh release download "$TAG" --repo "${{ github.repository }}" --pattern "launcherupdater_release.zip" --dir "./deploy_payload"
+              gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersion.json" --dir "./deploy_payload"
+              gh release download "$TAG" --repo "${{ github.repository }}" --pattern "LauncherUpdaterVersionMaster.json" --dir "./deploy_trigger"
+          } catch {
+              Write-Error "❌ ERRO FATAL: A tag '$TAG' não existe ou os arquivos não foram gerados no Passo 2."
+              exit 1
+          }
+        shell: pwsh
 
-      # Envia para a pasta da VERSÃO (Cria a pasta v1.0.0)
-      - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      # --- 3. UPLOAD PARA PRODUÇÃO (CLIENTES) ---
+      - name: 🚀 Deploy Pasta da Versão (Payload)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST }}
           username: ${{ secrets.SFTP_USERNAME }}
           password: ${{ secrets.SFTP_PASSWORD }}
           local-dir: "./deploy_payload/"
-          # O segredo deve apontar para .../LauncherUpdaterVersions
           server-dir: "${{ secrets.SFTP_PATH_PRODUCAO_LAUNCHER_UPDATER }}/${{ github.event.inputs.version_tag }}/"
 
-      # Envia o Master para a RAIZ
-      - uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: 🎯 Deploy Gatilho (Master)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.SFTP_HOST }}
           username: ${{ secrets.SFTP_USERNAME }}
